@@ -1,0 +1,17 @@
+develop a diffusion model to generate RimWorld event/base maps
+
+research:
+what kind of data does RimWorld send to a map for generation? which could be useful for a diffusion model? thinking: story text, number of Pawns on map, total wealth
+what kind of data does the mod RealRuins download? can we separate terrain generation step from base/building generation step? how does RimWorld currently separate map generation steps?
+
+idea:
+(possibly two different diffusion models)
+not an image model - create matrix of values representing terrain (& structure) as laid out on a grid
+train model based on base terrain as source, terrain + buildings as "ground truth" for building & structure placement (ignore material type at this step, just broad categories "wall", "door", "bridge")
+generation - add noise shapes to vanilla terrain generation (marking where to diffuse structures) - then resolve model for structures (no furniture, pawns, et al yet)
+
+use real ruins maps + RimWorlds internal definition of rooms (bedroom, workshop etc) to create dataset for training (matricies of values representing objects, structure + text descriptions)
+train model based on description/ideation text -> matrix of objects
+apply model to generated structures based on description text + known aspects of request (ideology style, wealth etc) (fill out furniture, items?)
+
+finally, add Pawns to map and fill out with items based on wealth calculation

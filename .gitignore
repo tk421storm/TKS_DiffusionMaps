@@ -1,0 +1,6 @@
+# Generated data: raw RealRuins blueprints (other players' uploads), extracts and window sets.
+# Rebuild with tools/extract.py and tools/windows.py.
+data/
+
+__pycache__/
+*.pyc

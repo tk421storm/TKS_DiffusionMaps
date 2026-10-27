@@ -1,0 +1,34 @@
+{
+  "name": "v1_48",
+  "window": 48,
+  "stride": 8,
+  "categories": [
+    {"id": 0, "name": "empty",        "char": " "},
+    {"id": 2, "name": "door",         "char": "+", "rule": "edifice.door", "structure": true},
+    {"id": 1, "name": "wall",         "char": "#", "rule": "edifice.wall", "structure": true},
+    {"id": 5, "name": "fence",        "char": ":", "structure": true},
+    {"id": 6, "name": "wall_mounted", "char": "%", "structure": true},
+    {"id": 4, "name": "bridge",       "char": "=", "rule": "terrain.bridge"},
+    {"id": 3, "name": "floor",        "char": ".", "rule": "terrain.any & !terrain.natural"}
+  ],
+  "terrain_overrides": {},
+  "terrain_patterns": [
+    ["PackedDirt$", "floor"]
+  ],
+  "edifice_overrides": {},
+  "edifice_patterns": [
+    ["Generator|Turbine|Thruster|Crematorium|PodLauncher|Reactor|Battery|^Farm$", "empty"],
+    ["^Hewn|^Solid|CollapsedRocks|Basalt|DeepSnow|^Mineable|Ore[A-Z]|GasVent|ThermalVent", "empty"],
+    ["Fence|Palisade|Razor|Barrier|Picket|ChainLink|Chainlink|KnifeRest|Barbed|Hedge", "fence", "edifice.wall & !edifice.door"],
+    ["Vent|Cooler|Heater|AirConditioning|Window|IntakeFan|FreezerUnit", "wall_mounted", "edifice.wall & !edifice.door"]
+  ],
+  "edge_policy": "mask",
+  "mask_grow": 1,
+  "min_structure_cells": 20,
+  "min_complete_buildings": 1,
+  "max_masked_fraction": 0.5,
+  "max_overlap": 0.5,
+  "building_classes": ["free_standing", "unroofed_enclosure"],
+  "split": {"by": "colony", "val": 0.1},
+  "seed": 1
+}
