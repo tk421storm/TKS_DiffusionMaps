@@ -52,6 +52,27 @@ python -I report.py --vocab ../configs/v1.json          # which defs map to whic
 To get more data, copy new `.bp` files (including those in the per-world subfolders) into `data/raw/`, then rerun
 `extract.py` and `windows.py`. `data/` is generated and can be rebuilt from `data/raw/` at any time.
 
+## GPU training environment (WSL2 + ROCm, AMD RX 7900 XTX)
+
+Verified 2026-10-27 on Windows 10 19045, Adrenalin 26.3.1, WSL 3.0.1, Ubuntu-22.04.
+AMD lists ROCDXG for Windows 11 only, but it works here.
+
+1. Inside WSL, ROCm uses ROCDXG, **not** the old `hsa-runtime-rocr4wsl-amdgpu`:
+   - installed: `hsa-rocr` 7.2.0, `rocdxg-roct` 1.2.2, `rocminfo`, plus the libraries the PyTorch wheel links against:
+     `hip-runtime-amd miopen-hip hipblas hipblaslt hipfft hiprand hipsolver hipsparse hipsparselt rccl rocblas rocsolver roctracer`
+   - `/opt/rocm/lib` registered with the linker: `echo /opt/rocm/lib | sudo tee /etc/ld.so.conf.d/rocm.conf && sudo ldconfig`
+   - `export HSA_ENABLE_DXG_DETECTION=1` (required before ROCm 7.13) and `/opt/rocm/bin` on `PATH`
+   - do not use the snap `rocminfo` (community ROCm 6.4 build; fails with `HSA_STATUS_ERROR_OUT_OF_RESOURCES`)
+2. `bash tools/setup_wsl_torch.sh` installs AMD's ROCm 7.2.1 PyTorch 2.9.1 wheels into `~/venvs/dm`.
+   These are AMD's "lw" wheels, which do not bundle ROCm, hence the system libraries in step 1.
+3. Check the GPU:
+   - `python -u tools/gpu_smoke.py` (step by step, shows where a hang happens)
+   - `python -u tools/bench_gpu.py` (speed): 24.8 ms/step GPU vs 1,261 ms/step CPU for a 3.4M-parameter U-Net, batch 64 → **51x faster**, about 2 s per epoch of v1
+
+**Known hang:** with copies from CPU to GPU on every step, the process got stuck in the driver (`D` state,
+wchan `vmbus_teardown_gpadl`); `kill -9` does not work and only `wsl --shutdown` clears it. To avoid it, keep the dataset
+on the GPU, which is small: about 14 MB for v1.
+
 ## Building classes (`segment.py`)
 
 A *building* is an enclosed area (open cells that walls cut off from the snapshot border) plus its walls.
