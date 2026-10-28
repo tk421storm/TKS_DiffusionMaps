@@ -1,0 +1,19 @@
+{
+ "onnx": "runs/v1_mdm/model.onnx",
+ "size_mb": 62.96,
+ "opset": 17,
+ "ort": "1.23.2",
+ "logits_max_abs_diff": 1.1473894119262695e-05,
+ "logits_argmax_agreement": 1.0,
+ "sampling_identical_cells": 1.0,
+ "cpu_timing_batch1": {
+  "1 thread": {
+   "forward_ms": 86.39,
+   "sample_s": 1.328
+  },
+  "all threads": {
+   "forward_ms": 24.06,
+   "sample_s": 0.41
+  }
+ }
+}

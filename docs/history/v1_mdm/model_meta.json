@@ -1,0 +1,38 @@
+{
+ "window": 48,
+ "num_classes": 7,
+ "mask_token": 7,
+ "categories": {
+  "0": "empty",
+  "2": "door",
+  "1": "wall",
+  "5": "fence",
+  "6": "wall_mounted",
+  "4": "bridge",
+  "3": "floor"
+ },
+ "inputs": {
+  "tokens": "int64 [batch, H, W] (row 0 = south)",
+  "ratio": "float32 [batch] masked fraction"
+ },
+ "output": "logits float32 [batch, C, H, W]",
+ "logit_bias": [
+  0.23489797115325928,
+  -0.6008362770080566,
+  -1.4504069089889526,
+  -0.2847399115562439,
+  -1.382441520690918,
+  -1.797439455986023,
+  -1.797439455986023
+ ],
+ "adjust": 0.6,
+ "sampler": {
+  "steps": 16,
+  "schedule": "keep cos(pi/2*(k+1)/steps) of the free cells masked",
+  "temperature": 1.0,
+  "conf_noise": 4.5
+ },
+ "checkpoint": "ckpt_best.pt",
+ "epoch": 150,
+ "val_loss": 0.40727218985557556
+}

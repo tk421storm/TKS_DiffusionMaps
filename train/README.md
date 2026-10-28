@@ -73,3 +73,5 @@ Known weaknesses:
 - Some walls that don't close.
 - Bridges appear as blobs, because the model has no idea where water is. That needs terrain conditioning.
 - Wall-mounted objects are almost never generated.
+
+Full v1 analysis, adjust sweep and saved run files: `../docs/HISTORY.md` and `../docs/history/v1_mdm/`.
