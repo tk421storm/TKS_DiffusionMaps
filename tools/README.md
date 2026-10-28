@@ -69,9 +69,17 @@ AMD lists ROCDXG for Windows 11 only, but it works here.
    - `python -u tools/gpu_smoke.py` (step by step, shows where a hang happens)
    - `python -u tools/bench_gpu.py` (speed): 24.8 ms/step GPU vs 1,261 ms/step CPU for a 3.4M-parameter U-Net, batch 64 → **51x faster**, about 2 s per epoch of v1
 
-**Known hang:** with copies from CPU to GPU on every step, the process got stuck in the driver (`D` state,
-wchan `vmbus_teardown_gpadl`); `kill -9` does not work and only `wsl --shutdown` clears it. To avoid it, keep the dataset
-on the GPU, which is small: about 14 MB for v1.
+**Known hang:** GPU processes can get stuck in the kernel while exiting, after their work is done.
+- Symptoms: `D` state, wchan `vmbus_teardown_gpadl`. `kill -9` does not work. While the process is stuck, new GPU processes block in
+  `dxgglobal_acquire_process_adapter_lock`. Only `wsl --shutdown` clears it.
+- None of these fixed it: matching ROCm 7.2.1, `HSA_ENABLE_SDMA=0`, `os._exit`. Large copies alone don't trigger it (`hang_probe.py`).
+- Suspected cause: the WSL kernel (6.18) against a Windows 10 host. AMD tests kernel 5.15 on Windows 11. Not verified.
+- Workaround: run GPU jobs through `run_wsl_gpu.sh`, which shuts WSL down once the job prints `done`.
+- Also keep training data on the GPU, and avoid pinned memory: allocating 128 MB pinned fails under WSL.
+
+**Upgrading ROCm:** the `rocdxg-roct` deb installs through the `/opt/rocm` symlink. After an upgrade switches the symlink,
+reinstall it (`sudo dpkg -i rocdxg-roct_*.deb && sudo ldconfig`), or `librocdxg.so` is not found.
+Before upgrading, `simulate_rocm_upgrade.sh <version>` dry-runs the upgrade without root.
 
 ## Building classes (`segment.py`)
 

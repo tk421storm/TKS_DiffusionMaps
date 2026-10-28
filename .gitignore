@@ -4,3 +4,6 @@ data/
 
 __pycache__/
 *.pyc
+
+# Training outputs (checkpoints, samples, ONNX exports).
+runs/
