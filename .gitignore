@@ -16,3 +16,5 @@ Native/
 # Model weights (66 MB) are copied from runs/<name>/ by hand for now; model_meta.json is tracked
 Models/**/*.onnx
 Models/**/ref_deterministic.txt
+# Built mod DLLs (dotnet build DiffusionMaps.csproj -c 1.6); kept out of this dev repo
+1.6/Assemblies/

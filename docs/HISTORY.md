@@ -130,3 +130,68 @@ In-game timings (i7-10700K, main thread):
 Conclusion: the ONNX route works on 1.6, and is fast enough to generate during map generation. Next: step 1b (vanilla settlement
 next to a generated layout, placed as real walls, doors and floors) and step 2 (vanilla layout export for three-way metrics,
 plus the inpainting test).
+
+## 2026-10-28: step 1b, compare tool (vanilla settlement next to ours)
+
+Dev actions (map only, category "DiffusionMaps"):
+- **Compare with vanilla settlement...**: pick a faction, then click. Vanilla's settlement generator (`BaseGen` symbol `settlement`, as
+  `GenStep_Settlement` calls it, no pawns) builds a 36x36 base left of the click, and ours builds one to the right with the same faction.
+- **Place diffusion layout...**: builds only ours.
+
+`Source/LayoutPlacer.cs` builds a layout:
+- clears plants, items and buildings (both sides, since real map generation adds plants after the settlement)
+- fixes obstacle cells (water, marsh, natural rock, mountain roof) as empty before sampling
+- places walls, doors and fences in the faction's cheap wall material and floor in its basic floor, both chosen with vanilla's
+  `BaseGenUtility`
+- places vents for wall_mounted cells, and lays bridge cells as floor
+- roofs enclosed rooms
+
+First in-game test (7 pairs, `Player.log`): obstacle handling works, with up to 579 cells fixed and built around. But our layouts were
+very sparse (1-2 small buildings, almost no floor), and some rooms had no door or unclosed walls.
+
+## 2026-10-28: inpainting test, density and seed shapes (`train/inpaint_test.py`)
+
+Cause of the sparse layouts: the 1b tool fixed the 6-cell ring of the 48x48 window outside the 36x36 square as empty. The model reads
+the known-empty context as "this is an empty area". The test reproduces the in-game setting in Python (48 samples per variant,
+measured on the 36x36 square). Files: `docs/history/v1_mdm/inpaint/`.
+
+| 36x36 square | Real (centre crop) | Ring | No ring, best crop | 1 corner seed | 2 corners | 4 corners | 7 corners |
+|---|---|---|---|---|---|---|---|
+| Wall/door cells | 114 | 36 | 122 | 217 | 251 | 335 | 454 |
+| Floor | 22% | 0.1% | 20% | 34% | 37% | 41% | 36% |
+| Complete rooms | 2.1 | 1.0 | 3.2 | 5.5 | 7.6 | 12.5 | 20.7 |
+| Rooms with a door | 95% | 75% | 81% | 82% | 80% | 74% | 60% |
+| Wall cells cut by the square's edge | 6.2 | 0 | 0.8 | 7.9 | 9.4 | 12.2 | 16.7 |
+| Seeds completed into a room | | | | 65% | 78% | 77% | 76% |
+
+- **No ring** brings back real player-base density. Choosing the best 36x36 crop of the 48x48 window cuts almost no walls.
+- **Seeding** (fixing a few wall cells for the model to complete, the user's idea) is a strong density control: even one L-shaped corner
+  almost doubles the structure, and 4 or more fill the square like a city block. A faction base probably needs 1-2. Vanilla's room count is
+  still to be measured.
+
+Seed shapes, one or two per square (the user asked whether diagonal walls break up the square look):
+
+| | Real | No seeds | 1 corner | 1 diag pair | 2 diag pairs | 1 staircase | 2 staircases | corner + diag |
+|---|---|---|---|---|---|---|---|---|
+| Wall/door cells | 114 | 122 | 217 | 185 | 240 | 186 | 242 | 256 |
+| Complete rooms | 2.1 | 3.2 | 5.5 | 4.0 | 6.2 | 4.1 | 7.2 | 7.2 |
+| Median room size | 24 | 20 | 16 | 15 | 15 | 11 | 7 | 16 |
+| Rooms with a door | 95% | 81% | 82% | 71% | 80% | 56% | 54% | 79% |
+| Doors set in a wall line | 87% | 84% | 86% | 86% | 84% | 75% | 70% | 83% |
+| Turns (share of wall cells) | 10.7% | 8.9% | 7.4% | 8.3% | 9.0% | 12.8% | 13.2% | 7.4% |
+| Diagonal-only joints per square | 0.9 | 1.4 | 1.6 | 1.9 | 3.0 | 3.4 | 4.6 | 2.1 |
+
+- A diagonal pair (two walls touching corner to corner) is mostly completed as a **cut corner**, giving octagon-like rooms, at about
+  the same quality as corner seeds.
+- A **staircase** (a 4-connected diagonal) gives visibly curved and round walls, more turns than real data, but worse rooms: smaller
+  rooms, many without a door, and some scribbled wall fragments.
+- All shapes raise the number of walls touching only corner to corner. RimWorld rooms connect through cell sides, so such a joint does
+  not seal a room. The repair pass has to fill one cell of each joint.
+
+Plan for the C# side (agreed):
+- no ring: only real obstacles fixed
+- best crop when there are no seeds
+- seed count and shape in the menu
+- repair pass: close rooms cut by the edge, turn one-cell gaps that close a room into doors, add a door to doorless rooms, fill
+  diagonal joints, remove stray walls, fill 1-2 cell pockets
+- log vanilla's side in the same format, to measure its density
