@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- RimWorld 1.6 (Unity Mono, .NET Framework 4.8 profile). Build with: dotnet build DiffusionMaps.csproj -c 1.6
+       A 1.7 (net10.0) configuration comes later; Source/LayoutModel.cs and Source/OnnxNative.cs have no game dependencies. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <Configurations>1.6</Configurations>
+    <Platforms>AnyCPU</Platforms>
+    <AssemblyName>DiffusionMaps</AssemblyName>
+    <RootNamespace>DiffusionMaps</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <!-- The folder also holds Python tooling and training data, so source files are listed explicitly -->
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>$(Configuration)\Assemblies\</OutputPath>
+    <!-- Copy the ONNX Runtime managed DLL and its dependencies (System.Memory etc.) next to the mod DLL -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DisableImplicitConfigurationDefines>true</DisableImplicitConfigurationDefines>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>true</Optimize>
+    <RimWorldDir>..\..\</RimWorldDir>
+    <OnnxRuntimeVersion>1.23.2</OnnxRuntimeVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == '1.6'">
+    <DefineConstants>v1_6</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Source\*.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Managed API only; the native onnxruntime.dll is copied to Native\ below. RimWorld tries to load every
+         DLL in Assemblies\ as a .NET assembly and stops at the first failure, so the native DLL must not go there. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="$(OnnxRuntimeVersion)" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="$(OnnxRuntimeVersion)" GeneratePathProperty="true" ExcludeAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(RimWorldDir)RimWorldWin64_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(RimWorldDir)RimWorldWin64_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Runtime.Serialization" />
+  </ItemGroup>
+  <Target Name="CopyOnnxRuntimeNative" AfterTargets="Build">
+    <Copy SourceFiles="$(PkgMicrosoft_ML_OnnxRuntime)\runtimes\win-x64\native\onnxruntime.dll" DestinationFolder="Native\win-x64\" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

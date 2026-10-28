@@ -103,3 +103,30 @@ Lessons:
 1. Improve v1: milder class weights, wall-closure metric, 24 steps, per-class bias for floor and door.
 2. Inpainting test: fix obstacle cells and check that the model builds around them. This is the step toward filling vanilla's settlement rect.
 3. In-game: a minimal C# GenStep running the ONNX model.
+
+## 2026-10-28: step 1a, the model runs inside RimWorld 1.6
+
+A minimal C# mod (`DiffusionMaps.csproj`, `Source/`) loads `Models/v1_mdm/model.onnx` with ONNX Runtime 1.23.2 (NuGet
+`Microsoft.ML.OnnxRuntime.Managed`, net48) and samples layouts from dev-mode actions (category "DiffusionMaps").
+
+- The native `onnxruntime.dll` is shipped in `Native/win-x64/` and loaded by full path (`OnnxNative.cs`) before first use.
+  It can't go in `Assemblies/`: RimWorld loads every DLL there as .NET and stops at the first failure. Loading it ourselves also
+  avoids the old Windows ML copy in `System32`.
+- Under Unity Mono (RimWorld 1.6.4871) the managed package and its dependencies (System.Memory, System.Buffers,
+  System.Numerics.Vectors, System.Runtime.CompilerServices.Unsafe) loaded without errors.
+- `Source/LayoutModel.cs` is a C# port of the MaskGIT sampler with no game code, so it can be shared with a 1.7 build.
+  Deterministic sampling matches the Python reference (`train/ort_reference.py`) on all 2,304 cells, both outside the game
+  (`tools/csharp_check`, .NET Framework 4.8) and in game. Doing the log-softmax in float32 like numpy was necessary:
+  with doubles, near-ties in confidence ordered differently and 8 cells differed.
+
+In-game timings (i7-10700K, main thread):
+
+| | Time |
+|---|---|
+| First model load | 0.91 s |
+| One layout, all threads | 0.34 to 0.43 s |
+| One layout, 1 thread | 1.35 s |
+
+Conclusion: the ONNX route works on 1.6, and is fast enough to generate during map generation. Next: step 1b (vanilla settlement
+next to a generated layout, placed as real walls, doors and floors) and step 2 (vanilla layout export for three-way metrics,
+plus the inpainting test).

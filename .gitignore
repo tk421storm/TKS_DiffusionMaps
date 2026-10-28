@@ -7,3 +7,12 @@ __pycache__/
 
 # Training outputs (checkpoints, samples, ONNX exports).
 runs/
+
+# C# build intermediates
+obj/
+bin/
+# Built by DiffusionMaps.csproj from the ONNX Runtime NuGet package
+Native/
+# Model weights (66 MB) are copied from runs/<name>/ by hand for now; model_meta.json is tracked
+Models/**/*.onnx
+Models/**/ref_deterministic.txt
