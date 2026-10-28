@@ -243,3 +243,34 @@ In game (25 compares, built layouts, averages):
   Cause: obstacles are fixed as *empty*, so the model sees open ground, not rock, and the training set excluded mountain-adjacent
   buildings.
 - Staircase seeds were the weakest in game: few rooms, little floor.
+
+## 2026-10-28: step A, mountains without retraining (`train/mountain_test.py`)
+
+Synthetic mountains (smoothed noise plus a slope, covering 20-45% of the window from one side), 32 windows, measured on the centred
+36x36 square with the remaining rock counted as wall. Ways of giving rock to the model:
+- **empty**: what the game does now
+- **wall**: all rock fixed as wall
+- **dig2**: as wall, but the outer 2 cells of rock are left free; built cells there count as mined out
+- **shell**: only rock's outermost cells fixed as wall, the inside as empty
+
+Files: `docs/history/v1_mdm/mountain/`.
+
+| 2 mixed seeds | empty | wall | dig2 | shell |
+|---|---|---|---|---|
+| Built wall-like cells | 71 | 260 | 287 | 175 |
+| Floor | 3.5% | 44% | 50% | 16% |
+| Complete rooms | 2.9 | 8.2 | 8.8 | 5.9 |
+| Rooms with a door (before repair) | 65% | 15% | 18% | 22% |
+| Open cells along the rock face that are built on | 1% | 97% | 94% | 73% |
+| Rooms using rock as part of their outline | 0.03 | 0.75 | 0.78 | 2.1 |
+| Rock cells mined out | | | 166 | |
+
+- **empty**: the model treats rock like the empty ring. It builds almost nothing near mountains, which is why it stays away from them in
+  game.
+- **wall** and **dig2**: a mass of fixed wall reads as "inside a huge building". The model paves half the square, thickens the rock face
+  with a 1-3 cell wall band, and leaves most rooms without a door. In dig2 it "digs" every freed cell, but only to make that band. This is
+  not digging in any useful sense.
+- **shell** is the only variant that hugs rock in a plausible way: rooms use the rock face as a wall (2 per square), with moderate floor.
+  The weak points are doorless rooms (the repair pass handles those), rooms following the rock's curves, and an occasional cluster of
+  scribbled walls.
+- Conclusion: without retraining, the shell gives hugging but no digging. Real digging needs a model that has seen mountain bases.
