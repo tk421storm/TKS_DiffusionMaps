@@ -12,6 +12,9 @@
     <Compile Include="Program.cs" />
     <Compile Include="..\..\Source\LayoutModel.cs" />
     <Compile Include="..\..\Source\OnnxNative.cs" />
+    <Compile Include="..\..\Source\LayoutGrid.cs" />
+    <Compile Include="..\..\Source\LayoutRepair.cs" />
+    <Compile Include="..\..\Source\LayoutGenerator.cs" />
     <Reference Include="System.Runtime.Serialization" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.23.2" />
   </ItemGroup>

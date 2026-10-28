@@ -7,64 +7,56 @@ using Verse;
 namespace DiffusionMaps
 {
     /// <summary>
-    /// Generates a layout for a map rectangle and builds it: clears the area, fixes cells that can't be built on as
-    /// empty (inpainting), samples the model, then places floors, walls, doors, fences and vents and roofs the enclosed
-    /// rooms. Materials follow the faction the same way vanilla BaseGen picks them.
+    /// The game side of a generated layout: marks obstacles for the generator, then clears the chosen square and builds
+    /// floors, walls, doors, fences and vents, and roofs the rooms. Materials follow the faction the same way vanilla
+    /// BaseGen picks them.
     /// </summary>
     public static class LayoutPlacer
     {
         public class Result
         {
-            public int seed;
+            public GeneratedLayout layout;
+            /// <summary>Where the layout was built: the requested square, shifted by the crop.</summary>
+            public CellRect rect;
             public int obstacles;
-            public long sampleMs;
-            public int[] grid;
             public readonly Dictionary<string, int> placed = new Dictionary<string, int>();
 
             public void Count(string what) => placed[what] = placed.TryGetValue(what, out int n) ? n + 1 : 1;
         }
 
-        /// <summary>
-        /// rect must be no larger than the model window. It is centred in the window, and the window cells around it
-        /// are fixed as empty, so the model has to fit its buildings inside rect.
-        /// </summary>
-        public static Result Generate(Map map, CellRect rect, Faction faction, LayoutModel model, int seed)
+        /// <summary>Rooms larger than this stay unroofed (yards and courtyards).</summary>
+        const int MaxRoofedRoom = 150;
+
+        /// <param name="rect">requested square; the model window is centred on it and the result may shift by up to
+        /// (window - size) / 2 cells to avoid cutting buildings</param>
+        /// <param name="allowed">extra test for the final square (e.g. keep clear of the vanilla side); null for none</param>
+        public static Result Generate(Map map, CellRect rect, Faction faction, LayoutModel model, GenerateOptions options, int seed,
+            Func<CellRect, bool> allowed = null)
         {
-            int n = model.Size;
-            if (rect.Width > n || rect.Height > n)
-                throw new ArgumentException($"rect {rect.Width}x{rect.Height} is larger than the {n}x{n} model window");
-            var result = new Result { seed = seed };
-            IntVec3 origin = new IntVec3(rect.minX - (n - rect.Width) / 2, 0, rect.minZ - (n - rect.Height) / 2);
+            int w = model.Size, lo = (w - options.size) / 2;
+            IntVec3 origin = new IntVec3(rect.minX - lo, 0, rect.minZ - lo);
+            var result = new Result();
 
-            ClearRect(map, rect);
-
-            var fixedCells = new int[n * n];
-            for (int z = 0; z < n; z++)
-                for (int x = 0; x < n; x++)
+            var blocked = new bool[w * w];
+            for (int z = 0; z < w; z++)
+                for (int x = 0; x < w; x++)
                 {
                     IntVec3 c = origin + new IntVec3(x, 0, z);
-                    bool free = rect.Contains(c) && !IsObstacle(c, map);
-                    fixedCells[z * n + x] = free ? -1 : Empty(model);
-                    if (rect.Contains(c) && !free)
+                    blocked[z * w + x] = !c.InBounds(map) || IsObstacle(c, map);
+                    if (blocked[z * w + x] && rect.Contains(c))
                         result.obstacles++;
                 }
+            CellRect inside = CellRect.WholeMap(map).ContractedBy(1);
+            CellRect Square(int ox, int oz) => new CellRect(origin.x + ox, origin.z + oz, options.size, options.size);
+            bool Fits(int ox, int oz) => Square(ox, oz).FullyContainedWithin(inside) && (allowed == null || allowed(Square(ox, oz)));
 
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            result.grid = model.Sample(new Random(seed), fixedCells: fixedCells);
-            result.sampleMs = watch.ElapsedMilliseconds;
+            var cats = new Categories(model.meta);
+            result.layout = LayoutGenerator.Generate(model, cats, options, new Random(seed), blocked, Fits);
+            result.rect = Square(result.layout.ox, result.layout.oz);
 
-            Place(map, origin, result, faction, model.meta);
+            ClearRect(map, result.rect);
+            Place(map, result, faction, cats);
             return result;
-        }
-
-        static int Empty(LayoutModel model) => CategoryId(model.meta, "empty");
-
-        static int CategoryId(ModelMeta meta, string name)
-        {
-            foreach (var pair in meta.categories)
-                if (pair.Value == name)
-                    return int.Parse(pair.Key);
-            throw new KeyNotFoundException($"model has no category '{name}'");
         }
 
         /// <summary>Cells the layout must leave alone: natural rock, mountain roof, and terrain that can't take walls (water, marsh).</summary>
@@ -94,9 +86,10 @@ namespace DiffusionMaps
                     t.Destroy();
         }
 
-        static void Place(Map map, IntVec3 origin, Result result, Faction faction, ModelMeta meta)
+        static void Place(Map map, Result result, Faction faction, Categories cats)
         {
-            int n = meta.window;
+            int n = result.layout.size;
+            int[] grid = result.layout.grid;
             ThingDef wallStuff = BaseGenUtility.RandomCheapWallStuff(faction);
             TerrainDef floor = BaseGenUtility.RandomBasicFloorDef(faction);
             ThingDef fence = DefDatabase<ThingDef>.GetNamedSilentFail("Fence");
@@ -105,33 +98,22 @@ namespace DiffusionMaps
             for (int z = 0; z < n; z++)
                 for (int x = 0; x < n; x++)
                 {
-                    IntVec3 c = origin + new IntVec3(x, 0, z);
-                    if (!c.InBounds(map))
-                        continue;
-                    switch (meta.CategoryName(result.grid[z * n + x]))
-                    {
-                        case "wall":
-                            Spawn(ThingDefOf.Wall, wallStuff, c, map, faction, result);
-                            break;
-                        case "door":
-                            Spawn(ThingDefOf.Door, wallStuff, c, map, faction, result);
-                            break;
-                        case "fence":
-                            Spawn(fence, wallStuff, c, map, faction, result);
-                            break;
-                        case "wall_mounted":
-                            // the category covers vents, coolers, heaters and windows; a vent stands in for all of them
-                            Spawn(vent, wallStuff, c, map, faction, result);
-                            break;
-                        case "floor":
-                        case "bridge":
-                            // the model knows nothing about water and water cells are fixed empty, so bridges can
-                            // only land on dry ground; they are laid as ordinary floor
-                            SetFloor(floor, c, map, result);
-                            break;
-                    }
+                    IntVec3 c = new IntVec3(result.rect.minX + x, 0, result.rect.minZ + z);
+                    int v = grid[z * n + x];
+                    if (v == cats.wall)
+                        Spawn(ThingDefOf.Wall, wallStuff, c, map, faction, result);
+                    else if (v == cats.door)
+                        Spawn(ThingDefOf.Door, wallStuff, c, map, faction, result);
+                    else if (v == cats.fence)
+                        Spawn(fence, wallStuff, c, map, faction, result);
+                    else if (v == cats.mounted)
+                        // the category covers vents, coolers, heaters and windows; a vent stands in for all of them
+                        Spawn(vent, wallStuff, c, map, faction, result);
+                    else if (v == cats.floor || v == cats.bridge)
+                        // bridges are ruled out while sampling unless allowed; if any come through they are laid as floor
+                        SetFloor(floor, c, map, result);
                 }
-            RoofEnclosed(map, origin, result, meta);
+            RoofRooms(map, result, cats);
         }
 
         static void Spawn(ThingDef def, ThingDef wallStuff, IntVec3 c, Map map, Faction faction, Result result)
@@ -156,48 +138,63 @@ namespace DiffusionMaps
         }
 
         /// <summary>
-        /// Constructed roof over every cell the outside can't reach without passing a wall, door or vent:
-        /// a flood fill from the window border through empty, floor, bridge and fence cells.
+        /// Constructed roof over enclosed rooms up to MaxRoofedRoom cells. Fences don't count as walls here, so animal
+        /// pens stay open to the sky.
         /// </summary>
-        static void RoofEnclosed(Map map, IntVec3 origin, Result result, ModelMeta meta)
+        static void RoofRooms(Map map, Result result, Categories cats)
         {
-            int n = meta.window;
-            var outside = new bool[n * n];
-            var queue = new Queue<int>();
-            bool Open(int i)
+            int n = result.layout.size;
+            int[] grid = result.layout.grid;
+            var regions = LayoutGrid.Label(grid, n, v => v != cats.wall && v != cats.door && v != cats.mounted);
+            for (int i = 0; i < grid.Length; i++)
             {
-                string cat = meta.CategoryName(result.grid[i]);
-                return cat != "wall" && cat != "door" && cat != "wall_mounted";
-            }
-            for (int i = 0; i < n; i++)
-                foreach (int cell in new[] { i, (n - 1) * n + i, i * n, i * n + n - 1 })
-                    if (!outside[cell] && Open(cell))
-                    {
-                        outside[cell] = true;
-                        queue.Enqueue(cell);
-                    }
-            while (queue.Count > 0)
-            {
-                int cell = queue.Dequeue();
-                int x = cell % n, z = cell / n;
-                foreach (int next in new[] { x > 0 ? cell - 1 : -1, x < n - 1 ? cell + 1 : -1, z > 0 ? cell - n : -1, z < n - 1 ? cell + n : -1 })
-                    if (next >= 0 && !outside[next] && Open(next))
-                    {
-                        outside[next] = true;
-                        queue.Enqueue(next);
-                    }
-            }
-            for (int i = 0; i < n * n; i++)
-            {
-                if (outside[i] || !Open(i))
+                if (!regions.Enclosed(i) || regions.area[regions.label[i]] > MaxRoofedRoom)
                     continue;
-                IntVec3 c = origin + new IntVec3(i % n, 0, i / n);
-                if (c.InBounds(map) && map.roofGrid.RoofAt(c) == null)
+                IntVec3 c = new IntVec3(result.rect.minX + i % n, 0, result.rect.minZ + i / n);
+                if (map.roofGrid.RoofAt(c) == null)
                 {
                     map.roofGrid.SetRoof(c, RoofDefOf.RoofConstructed);
                     result.Count("roof");
                 }
             }
+        }
+
+        /// <summary>
+        /// Reads what is built in rect back into categories (for vanilla's side of the comparison): doors, fences, walls
+        /// (anything impassable that fills its cell, natural rock excepted), and constructed floor.
+        /// </summary>
+        public static int[] ReadBack(Map map, CellRect rect, Categories cats)
+        {
+            var grid = new int[rect.Width * rect.Height];
+            int i = 0;
+            for (int z = rect.minZ; z <= rect.maxZ; z++)
+                for (int x = rect.minX; x <= rect.maxX; x++, i++)
+                {
+                    var c = new IntVec3(x, 0, z);
+                    Building edifice = c.GetEdifice(map);
+                    ThingDef def = edifice?.def;
+                    if (def != null && def.building != null && !def.building.isNaturalRock)
+                    {
+                        if (def.IsDoor)
+                        {
+                            grid[i] = cats.door;
+                            continue;
+                        }
+                        if (def.IsFence)
+                        {
+                            grid[i] = cats.fence;
+                            continue;
+                        }
+                        if (def.IsWall || (def.passability == Traversability.Impassable && def.fillPercent >= 0.99f))
+                        {
+                            grid[i] = cats.wall;
+                            continue;
+                        }
+                    }
+                    TerrainDef terrain = c.GetTerrain(map);
+                    grid[i] = map.terrainGrid.CanRemoveTopLayerAt(c) || terrain.bridge ? cats.floor : cats.empty;
+                }
+            return grid;
         }
     }
 }

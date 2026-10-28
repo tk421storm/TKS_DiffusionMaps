@@ -195,3 +195,51 @@ Plan for the C# side (agreed):
 - repair pass: close rooms cut by the edge, turn one-cell gaps that close a room into doors, add a door to doorless rooms, fill
   diagonal joints, remove stray walls, fill 1-2 cell pockets
 - log vanilla's side in the same format, to measure its density
+
+## 2026-10-28: generation and repair in C#, seeds in the dev menu
+
+Code (no game dependencies, so `tools/csharp_check` tests it outside the game):
+- `Source/LayoutGenerator.cs` changes how a layout is generated:
+  - no empty ring: only real obstacles (water, marsh, rock, mountain roof, off-map) are fixed as empty
+  - seeds are placed in the middle 24x24
+  - the 36x36 square is the crop of the 48x48 window that cuts the fewest walls, while still containing every seed, so it can shift
+    up to 6 cells
+  - bridges are ruled out while sampling (logit bias -30), since on dry ground they were floor blobs
+- `Source/LayoutRepair.cs` runs these steps in order:
+  1. close rooms cut by the crop edge, or clear them when only a sliver is inside
+  2. fill corner-to-corner joints
+  3. remove stray walls
+  4. turn one-cell gaps that would close off a room into doors
+  5. fill sealed 1-2 cell pockets
+  6. add doors until every room can be reached from outside (preferring outside, then a reachable room)
+- `Source/LayoutGrid.cs`: regions, `LayoutStats` (the train/metrics.py measures for one grid), ASCII rendering.
+- Dev menu: faction, then seed count 0-4, then shape (corner, diagonal pair, staircase, mixed). The compare tool reads vanilla's
+  side back from the map and logs both sides' measures and ASCII side by side.
+- Roofs go on enclosed rooms up to 150 cells. Fenced pens stay open.
+
+Repair test outside the game (`LayoutCheck . repair 16`, 16 layouts per setting):
+
+| Setting | Rooms, model then after repair | Rooms with a door before repair | Unreachable after |
+|---|---|---|---|
+| 0 seeds | 3.4 → 5.4 | 74% | 0 |
+| 2 corners | 11.4 → 14.6 | 73% | 3 rooms in 16 layouts, behind double walls |
+| 2 diagonal pairs | 7.6 → 12.1 | 76% | 0 |
+| 1 staircase | 6.7 → 8.8 | 72% | 0 |
+| 2 mixed | 9.7 → 14.0 | 81% | 0 |
+
+No stray walls or corner-to-corner joints remain in any of the 80 layouts.
+
+In game (25 compares, built layouts, averages):
+
+| | Vanilla (n=7) | 0 seeds (3) | 1 corner (4) | 1 staircase (5) | 3 mixed (7) | 3 diagonal (6) |
+|---|---|---|---|---|---|---|
+| Wall-like cells | 155 | 80 | 124 | 71 | 242 | 273 |
+| Floor cells | 268 | 50 | 239 | 49 | 259 | 431 |
+| Rooms | 7.0 | 3.7 | 6.5 | 1.4 | 12.6 | 12.5 |
+
+- Vanilla settlements average about 7 rooms per 36x36 square. One corner seed matches that density, and 3 seeds are about double.
+- The user's view: 2 mixed (corner + diagonal) seeds give the most interesting shapes.
+- Obstacles: the model builds around water well, but it also keeps away from mountains. Players hug mountains and dig into them.
+  Cause: obstacles are fixed as *empty*, so the model sees open ground, not rock, and the training set excluded mountain-adjacent
+  buildings.
+- Staircase seeds were the weakest in game: few rooms, little floor.

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using LudeonTK;
 using RimWorld;
@@ -70,12 +71,14 @@ namespace DiffusionMaps
 
         /// <summary>Same as vanilla's SettlementSizeRange midpoint (34-38); both sides use it so they compare fairly.</summary>
         const int CompareSize = 36;
-        const int CompareGap = 6;
+        /// <summary>Room for our square to shift (up to 6 cells) while staying clear of the vanilla side.</summary>
+        const int CompareGap = 12;
+        const int MinSeparation = 3;
 
         /// <summary>
-        /// Pick a faction, then click on the map: vanilla's settlement generator builds a 36x36 base to the left of the
-        /// click, and the model builds one to the right, same faction and materials. No pawns. Click again for more
-        /// pairs; right-click to stop.
+        /// Pick a faction, a seed count and a seed shape, then click on the map: vanilla's settlement generator builds a
+        /// 36x36 base to the left of the click, and the model builds one to the right, same faction. No pawns. Both are
+        /// logged side by side with their measures. Click again for more pairs; right-click to stop.
         /// </summary>
         [DebugAction(Category, "Compare with vanilla settlement...", allowedGameStates = AllowedGameStates.PlayingOnMap)]
         static List<DebugActionNode> CompareWithVanilla() => FactionNodes(compare: true);
@@ -84,6 +87,7 @@ namespace DiffusionMaps
         [DebugAction(Category, "Place diffusion layout...", allowedGameStates = AllowedGameStates.PlayingOnMap)]
         static List<DebugActionNode> PlaceLayout() => FactionNodes(compare: false);
 
+        /// <summary>Faction, then seed count, then (with seeds) seed shape; each leaf is a map tool.</summary>
         static List<DebugActionNode> FactionNodes(bool compare)
         {
             var nodes = new List<DebugActionNode>();
@@ -92,15 +96,35 @@ namespace DiffusionMaps
                 if (faction.IsPlayer || faction.def.hidden || !faction.def.humanlikeFaction || faction.temporary)
                     continue;
                 Faction local = faction;
-                nodes.Add(new DebugActionNode($"{faction.Name} ({faction.def.label}, {faction.def.techLevel})", DebugActionType.ToolMap)
+                var factionNode = new DebugActionNode($"{faction.Name} ({faction.def.label}, {faction.def.techLevel})");
+                factionNode.AddChild(Tool("0 seeds (best crop)", local, compare, new GenerateOptions()));
+                for (int k = 1; k <= 4; k++)
                 {
-                    action = () => OnClick(UI.MouseCell(), local, compare)
-                });
+                    var countNode = new DebugActionNode($"{k} seed{(k > 1 ? "s" : "")}");
+                    foreach (SeedShape shape in Enum.GetValues(typeof(SeedShape)))
+                        countNode.AddChild(Tool(ShapeLabel(shape), local, compare, new GenerateOptions { seeds = k, shape = shape }));
+                    factionNode.AddChild(countNode);
+                }
+                nodes.Add(factionNode);
             }
             return nodes;
         }
 
-        static void OnClick(IntVec3 click, Faction faction, bool compare)
+        static string ShapeLabel(SeedShape shape)
+        {
+            switch (shape)
+            {
+                case SeedShape.Corner: return "corner (L-shape)";
+                case SeedShape.Diagonal: return "diagonal pair (cut corners)";
+                case SeedShape.Staircase: return "staircase (curved walls)";
+                default: return "mixed (corner + diagonal)";
+            }
+        }
+
+        static DebugActionNode Tool(string label, Faction faction, bool compare, GenerateOptions options) =>
+            new DebugActionNode(label, DebugActionType.ToolMap) { action = () => OnClick(UI.MouseCell(), faction, compare, options) };
+
+        static void OnClick(IntVec3 click, Faction faction, bool compare, GenerateOptions options)
         {
             Run("Compare", () =>
             {
@@ -117,24 +141,36 @@ namespace DiffusionMaps
                     return;
                 }
 
+                LayoutModel model = DiffusionMapsMod.Model;
+                var cats = new Categories(model.meta);
                 var report = new StringBuilder();
+                report.AppendLine($"[DiffusionMaps] {faction.Name} ({faction.def.label}), {options}");
+                int[] vanillaGrid = null;
                 if (compare)
                 {
                     var watch = Stopwatch.StartNew();
                     LayoutPlacer.ClearRect(map, vanilla);
                     GenerateVanilla(map, vanilla, faction);
-                    report.AppendLine($"vanilla settlement ({vanilla}) in {watch.ElapsedMilliseconds} ms");
+                    vanillaGrid = LayoutPlacer.ReadBack(map, vanilla, cats);
+                    report.AppendLine($"vanilla  {vanilla} in {watch.ElapsedMilliseconds} ms: {LayoutStats.Of(vanillaGrid, CompareSize, cats)}");
                     MoteMaker.ThrowText(Label(vanilla), map, "vanilla", 8f);
                 }
 
                 int seed = Rand.Int;
-                LayoutPlacer.Result result = LayoutPlacer.Generate(map, ours, faction, DiffusionMapsMod.Model, seed);
-                report.AppendLine($"diffusion layout ({ours}) sampled in {result.sampleMs} ms, seed {seed}, {result.obstacles} obstacle cells fixed empty");
-                foreach (var pair in result.placed)
-                    report.AppendLine($"  {pair.Key}: {pair.Value}");
-                report.Append(Render(result.grid, DiffusionMapsMod.Model.meta));
-                MoteMaker.ThrowText(Label(ours), map, "diffusion", 8f);
-                Log.Message($"[DiffusionMaps] {faction.Name} ({faction.def.label})\n{report}");
+                CellRect avoid = vanilla.ExpandedBy(MinSeparation);
+                LayoutPlacer.Result result = LayoutPlacer.Generate(map, ours, faction, model, options, seed,
+                    allowed: compare ? (Func<CellRect, bool>)(r => !r.Overlaps(avoid)) : null);
+                GeneratedLayout layout = result.layout;
+                report.AppendLine($"ours     {result.rect} sampled in {layout.sampleMs} ms, seed {seed}, {layout.seedsPlaced} seeds placed, {result.obstacles} obstacle cells");
+                report.AppendLine($"  model:  {layout.before}");
+                report.AppendLine($"  repair: {layout.repairs}");
+                report.AppendLine($"  built:  {layout.after}");
+                report.AppendLine("  placed: " + string.Join(", ", result.placed.Select(p => $"{p.Key} {p.Value}")));
+                report.Append(compare
+                    ? LayoutGrid.RenderSideBySide(new[] { vanillaGrid, layout.grid }, CompareSize, cats)
+                    : LayoutGrid.Render(layout.grid, CompareSize, cats));
+                MoteMaker.ThrowText(Label(result.rect), map, "diffusion", 8f);
+                Log.Message(report.ToString());
             });
         }
 

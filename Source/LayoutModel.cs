@@ -83,13 +83,17 @@ namespace DiffusionMaps
         /// Generates one grid.
         /// fixedCells: optional, same size as the grid; a value of 0 or more pins that cell to that category,
         /// -1 leaves it free (inpainting). deterministic: argmax picks and no confidence noise.
+        /// extraBias: optional per-class values added on top of the model's logit bias (e.g. a large negative value
+        /// rules a category out).
         /// </summary>
-        public int[] Sample(Random rng, bool deterministic = false, int[] fixedCells = null, int? steps = null)
+        public int[] Sample(Random rng, bool deterministic = false, int[] fixedCells = null, int? steps = null, float[] extraBias = null)
         {
             int n = Size, cells = n * n, classes = meta.numClasses, mask = meta.maskToken;
             int stepCount = steps ?? meta.sampler.steps;
             float temperature = Math.Max(meta.sampler.temperature, 1e-6f);
-            float[] bias = meta.logitBias ?? new float[classes];
+            var bias = new float[classes];
+            for (int c = 0; c < classes; c++)
+                bias[c] = (meta.logitBias != null ? meta.logitBias[c] : 0f) + (extraBias != null ? extraBias[c] : 0f);
 
             var x = new long[cells];
             for (int i = 0; i < cells; i++)
