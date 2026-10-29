@@ -274,3 +274,98 @@ Files: `docs/history/v1_mdm/mountain/`.
   The weak points are doorless rooms (the repair pass handles those), rooms following the rock's curves, and an occasional cluster of
   scribbled walls.
 - Conclusion: without retraining, the shell gives hugging but no digging. Real digging needs a model that has seen mountain bases.
+
+## 2026-10-28: rock shell in game (`GenerateOptions.rockShell`, dev action "Toggle rock shell")
+
+C# version of the shell variant. Natural rock is kept separate from other obstacles:
+- its outermost cells are fixed as wall and its inside as empty
+- after sampling it stays rock (`Categories.Rock`), which repair treats as a permanent wall
+- a door goes through rock only as a last resort (mined)
+
+Water, marsh and cave floor stay fixed as empty.
+
+Outside the game (`LayoutCheck . rock 10`, smooth wavy cliff, 2 mixed seeds), shell off vs on:
+- built wall cells: 54 vs 103
+- rooms: 2.0 vs 1.7
+- rooms using rock: 0 vs 0.3
+
+In game: 8 compares near mountains, 2 mixed seeds, shell on. After repair, against vanilla's ~155 wall-like cells and ~7 rooms:
+
+| | Mean | Range |
+|---|---|---|
+| Built wall-like cells | 285 | 103-419 |
+| Floor cells | 43 | 0-185 (0-9 in 6 of 8) |
+| Rooms | 9.3 | 3-19 |
+| Rooms with no door before repair | 76% | |
+| Rooms still unreachable after repair | 1.0 | 0-3 |
+
+- The user's view: layouts do hug the mountains, but almost all of them have large walled-in spaces against the rock. Overall the
+  result feels not much better than noise.
+- The ASCII logs show the same failure as the Python wall and dig variants, only milder. Next to rock, the model draws solid
+  masses of wall several cells thick, with almost no floor, and the rooms between them have no doors. The same masses appear beside
+  large non-rock obstacles: one layout had no rock, only 45 water/marsh cells.
+- Reading: big fixed regions of any kind are far outside what v1 saw in training, because it never saw a constraint during training
+  and never saw a building next to a mountain. Repair can make rooms reachable, but it can't turn a wall mass into a building.
+- Conclusion: prompting tricks have reached their limit. Mountains and obstacles need a model trained with them as an input (v2).
+
+## 2026-10-28: more data (set `v1_48_more`)
+
+The RealRuins cache had grown to 8,501 blueprints, mostly downloaded on 2026-10-28. All new files (including the per-world subfolders) were
+copied into `data/raw`, which now holds 8,508 unique blueprints (v1 used 3,533). `extract.py` processed 4,975 new files with 0 errors.
+`windows.py configs/v1.json --out data/sets/v1_48_more` uses the same config as v1; the v1 set is left as trained.
+
+| | v1 (`v1_48`) | all (`v1_48_more`) |
+|---|---|---|
+| Blueprints | 3,533 | 8,508 |
+| Colonies | 1,249 | 3,065 |
+| Truncated uploads | 2,285 (65%) | 5,444 (64%) |
+| Free-standing buildings | 8,607 | 20,816 |
+| Mountain-adjacent buildings | 3,825 | 9,260 |
+| Unroofed enclosures | 1,131 | 2,803 |
+| Windows (train / val) | 6,489 (6,088 / 401) | 15,704 (14,848 / 856) |
+| Snapshots that give a window | 1,439 | 3,414 |
+| Masked fraction | 0.10 | 0.10 |
+
+The new data has the same make-up as the old: the same truncation rate, ratio of building classes, and windows per blueprint.
+Mountain-adjacent buildings, about a third of all buildings, are still excluded by the v1 config (windows with any mountain
+cell are dropped).
+
+## 2026-10-28: v1 baseline on more data (`runs/v1_more_mdm`, `configs/train_v1_more.json`)
+
+This is the v1 config unchanged (16.5M-parameter MaskGIT U-Net, 150 epochs, batch 64), trained on `v1_48_more`. It ran at about 37 s per
+epoch (v1: about 20 s), about 1.6 hours in total. The WSL exit hang occurred again and the runner cleared it.
+
+- Best validation loss: 0.3826 (v1: 0.407). The validation sets differ (856 vs 401 windows), so this is only a rough comparison.
+- Without the logit adjustment, generated samples are as poor as v1's (62 rooms per window, median room size 2). The class-weight
+  problem is unchanged.
+
+Both checkpoints sampled with the same seed, 64 samples each (`train/sweep_adjust.sh`). Real-data reference:
+
+| Metric | Real | v1 a=0.5 | **more a=0.5** | v1 a=0.6 | **more a=0.6** | v1 a=0.7 | **more a=0.7** |
+|---|---|---|---|---|---|---|---|
+| Empty cells | 89.5% | 73.0% | 74.5% | 78.9% | 80.5% | 83.6% | 84.7% |
+| Wall cells | 3.5% | 6.6% | 7.0% | 5.1% | 5.1% | 3.9% | 4.1% |
+| Floor cells | 6.6% | 16.7% | 16.0% | 14.4% | 13.1% | 11.5% | 10.4% |
+| Rooms per window | 2.74 | 4.6 | 5.4 | 3.3 | 3.1 | 2.1 | 2.5 |
+| Median room size | 25 | 16.5 | 15 | 19 | 20 | 20 | 20 |
+| Doors set in a wall line | 90% | 86% | 87% | 87% | 87% | 83% | 88% |
+| Rooms with a door | 95% | 81% | 82% | 77% | **86%** | 75% | **87%** |
+| Floor inside rooms | 53% | 24% | 30% | 21% | 25% | 20% | 22% |
+| Stray wall pieces | 1.4% | 0.9% | 1.1% | 0.9% | 1.1% | 1.3% | 0.8% |
+
+(The real-data columns from the two sets differ by less than 0.02 on every metric except floor inside rooms: 48% vs 53%.)
+
+Files: `docs/history/v1_more_mdm/` (sample sheet at a=0.6, metrics at a=0.5/0.6/0.7, training log and config).
+
+- With 2.4 times the data, the model improves moderately but not fundamentally. Rooms are more often closed with a door (77% → 86% at
+  a=0.6), there is slightly less floor outside rooms, and a=0.7 now keeps the room count near real (2.5) without losing doors.
+- The sample sheet looks much like v1's. The same faults remain: floor blobs outside buildings, bridge patches, occasional
+  loose wall lines.
+- The faults that look like noise in game come mostly from things more data doesn't change:
+  - the class weighting, which the logit bias corrects only coarsely
+  - large fixed regions the model never saw in training (see the rock shell entry)
+- Next: v2 changes to the training itself rather than more of the same data:
+  - rock/obstacle input channel
+  - mountain-adjacent buildings
+  - random fixed regions during training
+  - milder class weights, so the sampling bias matters less

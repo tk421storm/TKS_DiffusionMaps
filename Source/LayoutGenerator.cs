@@ -26,6 +26,12 @@ namespace DiffusionMaps
         /// ruled out during sampling and the model picks floor or empty instead.
         /// </summary>
         public bool allowBridges;
+        /// <summary>
+        /// Give natural rock to the model as a "shell": its outermost cells as wall, the inside as empty. The model then
+        /// treats a mountain like a long building wall and builds rooms against it. With false, rock is plain empty,
+        /// which the model reads as open ground and keeps away from (docs/HISTORY.md, step A).
+        /// </summary>
+        public bool rockShell = true;
 
         public override string ToString() => seeds == 0 ? "no seeds" : $"{seeds} {shape} seed{(seeds > 1 ? "s" : "")}";
     }
@@ -59,19 +65,38 @@ namespace DiffusionMaps
         /// <summary>Seeds stay this far inside the centred square, so the crop can still shift to avoid cutting buildings.</summary>
         const int SeedMargin = 6;
 
-        /// <param name="blocked">window cells that must stay empty (obstacles, off the map); null for none</param>
+        /// <param name="blocked">window cells that must stay empty and unbuilt (water, marsh, off the map); null for none</param>
+        /// <param name="rock">window cells of natural rock; null for none. They stay rock in the result (Categories.Rock),
+        /// except where repair has to put a door through them.</param>
         /// <param name="cropFits">whether a crop at window offset (ox, oz) may be used; null for any</param>
         public static GeneratedLayout Generate(LayoutModel model, Categories cats, GenerateOptions options, Random rng,
-            bool[] blocked = null, Func<int, int, bool> cropFits = null)
+            bool[] blocked = null, bool[] rock = null, Func<int, int, bool> cropFits = null)
         {
             int w = model.Size, size = options.size, lo = (w - size) / 2;
+            bool RockIn(int x, int z) => x >= 0 && z >= 0 && x < w && z < w && rock != null && rock[z * w + x];
+            // for the shell, cells beyond the window edge count as rock, so the edge doesn't make a face
+            bool RockOrOff(int x, int z) => x < 0 || z < 0 || x >= w || z >= w || RockIn(x, z);
             var fixedCells = new int[w * w];
+            var noSeed = new bool[w * w];
             for (int i = 0; i < fixedCells.Length; i++)
-                fixedCells[i] = blocked != null && blocked[i] ? cats.empty : -1;
+            {
+                int x = i % w, z = i / w;
+                if (rock != null && rock[i])
+                {
+                    // the shell: rock with open ground beside it (the window edge doesn't count)
+                    bool face = !RockOrOff(x - 1, z) || !RockOrOff(x + 1, z) || !RockOrOff(x, z - 1) || !RockOrOff(x, z + 1);
+                    fixedCells[i] = options.rockShell && face ? cats.wall : cats.empty;
+                }
+                else
+                    fixedCells[i] = blocked != null && blocked[i] ? cats.empty : -1;
+                // seeds keep a one-cell gap from rock and stay off blocked cells
+                noSeed[i] = (blocked != null && blocked[i])
+                    || RockIn(x, z) || RockIn(x - 1, z) || RockIn(x + 1, z) || RockIn(x, z - 1) || RockIn(x, z + 1);
+            }
 
             var layout = new GeneratedLayout { size = size };
             int minX = w, minZ = w, maxX = -1, maxZ = -1;
-            foreach (List<int> seed in ScatterSeeds(rng, options, w, lo + SeedMargin, lo + size - SeedMargin, blocked))
+            foreach (List<int> seed in ScatterSeeds(rng, options, w, lo + SeedMargin, lo + size - SeedMargin, noSeed))
             {
                 foreach (int cell in seed)
                 {
@@ -91,6 +116,10 @@ namespace DiffusionMaps
             var watch = Stopwatch.StartNew();
             layout.window = model.Sample(rng, fixedCells: fixedCells, extraBias: extraBias);
             layout.sampleMs = watch.ElapsedMilliseconds;
+            if (rock != null)
+                for (int i = 0; i < rock.Length; i++)
+                    if (rock[i])
+                        layout.window[i] = Categories.Rock;
 
             // the crop must contain every seed cell
             bool Fits(int ox, int oz) => (cropFits == null || cropFits(ox, oz))
@@ -117,7 +146,7 @@ namespace DiffusionMaps
                     int inside = 0;
                     for (int z = 0; z < size; z++)
                         for (int x = 0; x < size; x++)
-                            if (cats.WallLike(window[(oz + z) * w + ox + x]))
+                            if (cats.Built(window[(oz + z) * w + ox + x]))
                                 inside++;
                     int score = inside - 3 * CutCells(window, w, ox, oz, size, cats);
                     if (score > bestScore)
@@ -132,7 +161,7 @@ namespace DiffusionMaps
         /// <summary>Wall-like cells on the crop border with a wall-like neighbour just outside the crop.</summary>
         static int CutCells(int[] window, int w, int ox, int oz, int size, Categories cats)
         {
-            bool WL(int x, int z) => cats.WallLike(LayoutGrid.At(window, w, x, z));
+            bool WL(int x, int z) => cats.Built(LayoutGrid.At(window, w, x, z));
             int n = 0;
             for (int i = 0; i < size; i++)
             {

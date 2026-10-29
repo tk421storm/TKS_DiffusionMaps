@@ -1,0 +1,34 @@
+{
+ "real": {
+  "freq_empty": 0.895241207546658,
+  "freq_door": 0.002006106906467014,
+  "freq_wall": 0.034786224365234375,
+  "freq_fence": 0.00023184882269965278,
+  "freq_wall_mounted": 0.0003077189127604167,
+  "freq_bridge": 0.001274532741970486,
+  "freq_floor": 0.06615236070421007,
+  "stray_wall": 0.013774236897677098,
+  "door_valid": 0.8987956898373125,
+  "mounted_valid": 0.8911845730027548,
+  "rooms_per_window": 2.7392578125,
+  "room_area_median": 25.0,
+  "rooms_with_door": 0.9515151515151515,
+  "floor_enclosed": 0.5300532443151602
+ },
+ "generated": {
+  "freq_empty": 0.8048299153645834,
+  "freq_door": 0.0029296875,
+  "freq_wall": 0.05101182725694445,
+  "freq_fence": 0.00037977430555555556,
+  "freq_wall_mounted": 0.00025770399305555556,
+  "freq_bridge": 0.009541829427083334,
+  "freq_floor": 0.1310492621527778,
+  "stray_wall": 0.010766806722689076,
+  "door_valid": 0.8703703703703703,
+  "mounted_valid": 0.7894736842105263,
+  "rooms_per_window": 3.140625,
+  "room_area_median": 20.0,
+  "rooms_with_door": 0.8606965174129353,
+  "floor_enclosed": 0.24617056510039328
+ }
+}

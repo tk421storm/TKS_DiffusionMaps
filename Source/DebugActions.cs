@@ -75,6 +75,17 @@ namespace DiffusionMaps
         const int CompareGap = 12;
         const int MinSeparation = 3;
 
+        /// <summary>Whether layouts give rock to the model as a shell (GenerateOptions.rockShell). On by default.</summary>
+        static bool rockShell = true;
+
+        [DebugAction(Category, "Toggle rock shell", allowedGameStates = AllowedGameStates.Invalid)]
+        static void ToggleRockShell()
+        {
+            rockShell = !rockShell;
+            Messages.Message($"DiffusionMaps: rock shell {(rockShell ? "on (build against mountains)" : "off (rock is empty ground)")}",
+                MessageTypeDefOf.NeutralEvent, false);
+        }
+
         /// <summary>
         /// Pick a faction, a seed count and a seed shape, then click on the map: vanilla's settlement generator builds a
         /// 36x36 base to the left of the click, and the model builds one to the right, same faction. No pawns. Both are
@@ -143,6 +154,7 @@ namespace DiffusionMaps
 
                 LayoutModel model = DiffusionMapsMod.Model;
                 var cats = new Categories(model.meta);
+                options.rockShell = rockShell;
                 var report = new StringBuilder();
                 report.AppendLine($"[DiffusionMaps] {faction.Name} ({faction.def.label}), {options}");
                 int[] vanillaGrid = null;
@@ -161,7 +173,7 @@ namespace DiffusionMaps
                 LayoutPlacer.Result result = LayoutPlacer.Generate(map, ours, faction, model, options, seed,
                     allowed: compare ? (Func<CellRect, bool>)(r => !r.Overlaps(avoid)) : null);
                 GeneratedLayout layout = result.layout;
-                report.AppendLine($"ours     {result.rect} sampled in {layout.sampleMs} ms, seed {seed}, {layout.seedsPlaced} seeds placed, {result.obstacles} obstacle cells");
+                report.AppendLine($"ours     {result.rect} sampled in {layout.sampleMs} ms, seed {seed}, {layout.seedsPlaced} seeds placed, rock shell {(options.rockShell ? "on" : "off")}, {result.rock} rock and {result.obstacles} other obstacle cells");
                 report.AppendLine($"  model:  {layout.before}");
                 report.AppendLine($"  repair: {layout.repairs}");
                 report.AppendLine($"  built:  {layout.after}");

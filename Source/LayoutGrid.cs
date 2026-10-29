@@ -6,10 +6,17 @@ namespace DiffusionMaps
 {
     /// <summary>
     /// Category ids by name, from model_meta.json. Missing categories are -1.
-    /// "Wall-like" = wall, door, fence, wall_mounted: anything that blocks a room or sits in a wall line (as train/metrics.py).
+    /// "Wall-like" = wall, door, fence, wall_mounted: anything that blocks a room or sits in a wall line (as train/metrics.py),
+    /// plus natural rock.
     /// </summary>
     public class Categories
     {
+        /// <summary>
+        /// Natural rock on the map. Not a model category: layouts use it after sampling, so that repair and placement
+        /// treat mountains as walls that are already there.
+        /// </summary>
+        public const int Rock = -2;
+
         public readonly int empty, wall, door, floor, bridge, fence, mounted;
 
         public Categories(ModelMeta meta)
@@ -30,13 +37,17 @@ namespace DiffusionMaps
             mounted = Id("wall_mounted");
         }
 
-        public bool WallLike(int v) => v == wall || v == door || v == fence || v == mounted;
+        public bool WallLike(int v) => v == wall || v == door || v == fence || v == mounted || v == Rock;
 
         /// <summary>Wall-like but not a door: the cells a room's outline is made of.</summary>
-        public bool Blocking(int v) => v == wall || v == fence || v == mounted;
+        public bool Blocking(int v) => v == wall || v == fence || v == mounted || v == Rock;
+
+        /// <summary>Wall-like and built by the layout, i.e. not rock.</summary>
+        public bool Built(int v) => v != Rock && WallLike(v);
 
         public char Char(int v) =>
-            v == empty ? ' ' : v == wall ? '#' : v == door ? '+' : v == floor ? '.' : v == bridge ? '=' : v == fence ? ':' : v == mounted ? '%' : '?';
+            v == empty ? ' ' : v == wall ? '#' : v == door ? '+' : v == floor ? '.' : v == bridge ? '=' : v == fence ? ':' : v == mounted ? '%'
+            : v == Rock ? 'R' : '?';
     }
 
     /// <summary>
@@ -142,7 +153,7 @@ namespace DiffusionMaps
     /// <summary>The structural measures of train/metrics.py that matter for a settlement, for one grid.</summary>
     public class LayoutStats
     {
-        public int wallLike, floor, rooms, roomsWithDoor, inaccessibleRooms, strayWalls, diagonalJoints;
+        public int wallLike, rock, floor, rooms, roomsWithDoor, inaccessibleRooms, strayWalls, diagonalJoints;
         public int doors, doorsInWallLine;
 
         public static LayoutStats Of(int[] grid, int size, Categories cats)
@@ -154,15 +165,17 @@ namespace DiffusionMaps
             {
                 int v = grid[i];
                 int x = i % size, z = i / size;
-                if (cats.WallLike(v))
+                if (cats.Built(v))
                     s.wallLike++;
+                if (v == Categories.Rock)
+                    s.rock++;
                 if (v == cats.floor)
                     s.floor++;
                 int nWall = 0;
                 foreach (int nb in LayoutGrid.Neighbours4(i, size))
                     if (cats.WallLike(grid[nb]))
                         nWall++;
-                if (cats.Blocking(v) && nWall == 0)
+                if (cats.Blocking(v) && v != Categories.Rock && nWall == 0)
                     s.strayWalls++;
                 if (v == cats.door)
                 {
@@ -192,7 +205,7 @@ namespace DiffusionMaps
         }
 
         public override string ToString() =>
-            $"{wallLike} wall-like cells, {floor} floor, {rooms} rooms ({roomsWithDoor} with a door, {inaccessibleRooms} unreachable), " +
+            $"{wallLike} wall-like cells, {rock} rock, {floor} floor, {rooms} rooms ({roomsWithDoor} with a door, {inaccessibleRooms} unreachable), " +
             $"doors in a wall line {doorsInWallLine}/{doors}, {strayWalls} stray walls, {diagonalJoints} diagonal joints";
     }
 }

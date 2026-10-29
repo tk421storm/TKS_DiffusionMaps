@@ -5,17 +5,19 @@ namespace DiffusionMaps
     /// <summary>What a repair pass changed.</summary>
     public class RepairReport
     {
-        public int edgeWalls, slivers, diagonalFills, straysRemoved, gapDoors, pocketsFilled, addedDoors, unresolvedRooms;
+        public int edgeWalls, slivers, diagonalFills, straysRemoved, gapDoors, pocketsFilled, addedDoors, rockDoors, unresolvedRooms;
 
         public override string ToString() =>
             $"{edgeWalls} edge walls, {slivers} cut slivers cleared, {diagonalFills} diagonal joints filled, {straysRemoved} stray walls removed, " +
-            $"{gapDoors} gaps made doors, {pocketsFilled} pockets filled, {addedDoors} doors added, {unresolvedRooms} rooms still unreachable";
+            $"{gapDoors} gaps made doors, {pocketsFilled} pockets filled, {addedDoors} doors added ({rockDoors} mined through rock), {unresolvedRooms} rooms still unreachable";
     }
 
     /// <summary>
     /// Fixes the model's structural slips on a cropped layout, the guarantees vanilla's generator gives by construction:
     /// rooms closed where the crop cuts them, no corner-to-corner wall joints (they don't seal a room in RimWorld),
     /// no lone wall pieces, no sealed pockets, and every room reachable through doors. No game dependencies.
+    /// Natural rock (Categories.Rock) counts as wall and is never removed; a door goes through rock only when a room has
+    /// no other way out (the cell is then mined).
     /// </summary>
     public static class LayoutRepair
     {
@@ -123,7 +125,7 @@ namespace DiffusionMaps
         {
             for (int i = 0; i < g.Length; i++)
             {
-                if (!cats.WallLike(g[i]))
+                if (!cats.WallLike(g[i]) || g[i] == Categories.Rock)
                     continue;
                 int walls = 0, floors = 0;
                 foreach (int nb in LayoutGrid.Neighbours4(i, n))
@@ -185,7 +187,7 @@ namespace DiffusionMaps
         /// <summary>
         /// Adds doors until every room can be reached from outside: one door at a time, in a wall or fence cell between an
         /// unreachable room and a reachable area (outside preferred). If a room borders no reachable area directly, it is
-        /// connected to a neighbouring room instead, which a later iteration connects onwards.
+        /// connected to a neighbouring room instead, which a later iteration connects onwards. Rock is used last.
         /// </summary>
         static void ConnectRooms(int[] g, int n, Categories cats, RepairReport report)
         {
@@ -198,7 +200,7 @@ namespace DiffusionMaps
                 int best = -1, bestRank = int.MaxValue;
                 for (int i = 0; i < g.Length; i++)
                 {
-                    if (g[i] != cats.wall && g[i] != cats.fence)
+                    if (g[i] != cats.wall && g[i] != cats.fence && g[i] != Categories.Rock)
                         continue;
                     if (!DoorSides(g, n, i, cats, c => cats.WallLike(c), out int s1, out int s2))
                         continue;
@@ -206,8 +208,9 @@ namespace DiffusionMaps
                     if (r1 == r2 || (!stuck.Contains(r1) && !stuck.Contains(r2)))
                         continue;
                     int other = stuck.Contains(r1) ? r2 : r1;
-                    // rank: 0 = opens to the outside, 1 = to a reachable room, 2 = to another unreachable room
-                    int rank = regions.outside[other] ? 0 : reachable[other] ? 1 : 2;
+                    // rank: 0 = opens to the outside, 1 = to a reachable room, 2 = to another unreachable room;
+                    // the same through rock ranks after all built walls
+                    int rank = (regions.outside[other] ? 0 : reachable[other] ? 1 : 2) + (g[i] == Categories.Rock ? 3 : 0);
                     if (rank < bestRank)
                     {
                         best = i;
@@ -218,6 +221,8 @@ namespace DiffusionMaps
                 }
                 if (best < 0)
                     return;
+                if (g[best] == Categories.Rock)
+                    report.rockDoors++;
                 g[best] = cats.door;
                 report.addedDoors++;
             }

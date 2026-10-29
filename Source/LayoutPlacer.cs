@@ -7,8 +7,8 @@ using Verse;
 namespace DiffusionMaps
 {
     /// <summary>
-    /// The game side of a generated layout: marks obstacles for the generator, then clears the chosen square and builds
-    /// floors, walls, doors, fences and vents, and roofs the rooms. Materials follow the faction the same way vanilla
+    /// The game side of a generated layout: marks rock and other obstacles for the generator, then clears the chosen square
+    /// and builds floors, walls, doors, fences and vents, and roofs the rooms. Materials follow the faction the same way vanilla
     /// BaseGen picks them.
     /// </summary>
     public static class LayoutPlacer
@@ -18,7 +18,8 @@ namespace DiffusionMaps
             public GeneratedLayout layout;
             /// <summary>Where the layout was built: the requested square, shifted by the crop.</summary>
             public CellRect rect;
-            public int obstacles;
+            /// <summary>Cells in the requested square: natural rock, and other cells that can't be built on.</summary>
+            public int rock, obstacles;
             public readonly Dictionary<string, int> placed = new Dictionary<string, int>();
 
             public void Count(string what) => placed[what] = placed.TryGetValue(what, out int n) ? n + 1 : 1;
@@ -38,20 +39,28 @@ namespace DiffusionMaps
             var result = new Result();
 
             var blocked = new bool[w * w];
+            var rock = new bool[w * w];
             for (int z = 0; z < w; z++)
                 for (int x = 0; x < w; x++)
                 {
                     IntVec3 c = origin + new IntVec3(x, 0, z);
-                    blocked[z * w + x] = !c.InBounds(map) || IsObstacle(c, map);
-                    if (blocked[z * w + x] && rect.Contains(c))
-                        result.obstacles++;
+                    int i = z * w + x;
+                    rock[i] = c.InBounds(map) && IsNaturalRock(c, map);
+                    blocked[i] = !c.InBounds(map) || (!rock[i] && IsObstacle(c, map));
+                    if (rect.Contains(c))
+                    {
+                        if (rock[i])
+                            result.rock++;
+                        else if (blocked[i])
+                            result.obstacles++;
+                    }
                 }
             CellRect inside = CellRect.WholeMap(map).ContractedBy(1);
             CellRect Square(int ox, int oz) => new CellRect(origin.x + ox, origin.z + oz, options.size, options.size);
             bool Fits(int ox, int oz) => Square(ox, oz).FullyContainedWithin(inside) && (allowed == null || allowed(Square(ox, oz)));
 
             var cats = new Categories(model.meta);
-            result.layout = LayoutGenerator.Generate(model, cats, options, new Random(seed), blocked, Fits);
+            result.layout = LayoutGenerator.Generate(model, cats, options, new Random(seed), blocked, rock, Fits);
             result.rect = Square(result.layout.ox, result.layout.oz);
 
             ClearRect(map, result.rect);
@@ -59,14 +68,22 @@ namespace DiffusionMaps
             return result;
         }
 
-        /// <summary>Cells the layout must leave alone: natural rock, mountain roof, and terrain that can't take walls (water, marsh).</summary>
+        static bool IsNaturalRock(IntVec3 c, Map map) => NaturalRockAt(c, map) != null;
+
+        static Thing NaturalRockAt(IntVec3 c, Map map)
+        {
+            foreach (Thing t in c.GetThingList(map))
+                if (t.def.building != null && t.def.building.isNaturalRock)
+                    return t;
+            return null;
+        }
+
+        /// <summary>Other cells the layout must leave empty: open ground under a mountain roof (caves), and terrain that
+        /// can't take walls (water, marsh).</summary>
         static bool IsObstacle(IntVec3 c, Map map)
         {
             if (map.roofGrid.RoofAt(c) is RoofDef roof && roof.isNatural)
                 return true;
-            foreach (Thing t in c.GetThingList(map))
-                if (t.def.building != null && t.def.building.isNaturalRock)
-                    return true;
             return !c.GetTerrain(map).affordances.Contains(TerrainAffordanceDefOf.Heavy);
         }
 
@@ -120,6 +137,13 @@ namespace DiffusionMaps
         {
             if (def == null)
                 return;
+            // repair only builds on rock to put a door through it when a room has no other way out: mine the cell first
+            Thing rock = NaturalRockAt(c, map);
+            if (rock != null)
+            {
+                rock.Destroy();
+                result.Count("mined");
+            }
             ThingDef stuff = null;
             if (def.MadeFromStuff)
                 stuff = wallStuff.stuffProps.CanMake(def) ? wallStuff : GenStuff.DefaultStuffFor(def);
@@ -145,7 +169,7 @@ namespace DiffusionMaps
         {
             int n = result.layout.size;
             int[] grid = result.layout.grid;
-            var regions = LayoutGrid.Label(grid, n, v => v != cats.wall && v != cats.door && v != cats.mounted);
+            var regions = LayoutGrid.Label(grid, n, v => v != cats.wall && v != cats.door && v != cats.mounted && v != Categories.Rock);
             for (int i = 0; i < grid.Length; i++)
             {
                 if (!regions.Enclosed(i) || regions.area[regions.label[i]] > MaxRoofedRoom)
