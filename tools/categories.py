@@ -17,6 +17,10 @@ Overrides win over rules, exact names first:
   "edifice_patterns" / "terrain_patterns":   [[regex, category name, optional rule], ...]
       first match wins; regexes are case-sensitive; the optional rule (same grammar as above)
       must also hold, e.g. "edifice.wall & !edifice.door" keeps FenceGate a door
+Things that aren't walls or doors (sandbags, traps, turrets):
+  "thing_patterns": [[regex, category name], ...]   first match on the def name wins; the thing's cell takes the
+      category unless an edifice rule already gave it one. "skip_things" (regex) names defs never matched
+      (frames, blueprints, minified things).
 """
 import glob
 import os
@@ -101,6 +105,15 @@ class Categories:
             facts = {"edifice.wall": wall > 0, "edifice.door": door >= wall and door > 0, "edifice=" + n: True}
             o = e_ovr(n, facts)
             self.edifice_lut[i] = o if o is not None else self._match(rules, facts, "edifice")
+        # Thing table: 0 = no category.
+        tnames = vocab["thing"]["names"]
+        self.thing_lut = np.zeros(len(tnames), np.uint8)
+        patterns = [(re.compile(p), self.ids[c]) for p, c in config.get("thing_patterns", [])]
+        skip = re.compile(config.get("skip_things", r"^(Frame_|Blueprint_|Minified)"))
+        if patterns:
+            for i, n in enumerate(tnames[1:], 1):
+                if not skip.search(n):
+                    self.thing_lut[i] = next((c for rx, c in patterns if rx.search(n)), 0)
 
     def _overrides(self, config, kind):
         exact = config.get(kind + "_overrides", {})
@@ -138,7 +151,15 @@ class Categories:
         """Category grid (H, W) uint8 for one extract (dict-like of arrays)."""
         cat = self.terrain_lut[extract["terrain_id"]]
         ed = self.edifice_lut[extract["edifice_id"]]
-        return np.where(ed > 0, ed, cat)
+        cat = np.where(ed > 0, ed, cat)
+        t = extract["things"]
+        if len(t) and self.thing_lut.any():
+            tc = self.thing_lut[t["def"]]
+            sel = tc > 0
+            z, x, tc = t["z"][sel], t["x"][sel], tc[sel]
+            free = ed[z, x] == 0
+            cat[z[free], x[free]] = tc[free]
+        return cat
 
     def structure_ids(self):
         """Category ids that count as structure (everything except 0 and plain floor-like terrain)."""

@@ -7,8 +7,9 @@ Per snapshot:
   1. Map layers to categories (categories.py).
   2. Pad the snapshot by one window of empty ground (the home-area box is not the edge of the
      map). If the snapshot was truncated, everything above the cut row is invalid.
-  3. Candidate windows on a stride grid; drop any with invalid or mountain cells, or with fewer
-     than min_structure_cells structure cells.
+  3. Candidate windows on a stride grid; drop any with invalid cells, with mountain cells (unless
+     allow_mountain), with more than max_rock_fraction rock, or with fewer than min_structure_cells
+     structure cells.
   4. A structure component (8-connected walls/doors/building interiors) is "bad" if the window cuts
      it or it contains a building whose class is not in building_classes.
        edge_policy "reject": drop windows with any bad component.
@@ -19,9 +20,14 @@ Per snapshot:
   5. Greedy de-duplication by most unmasked structure, skipping overlap above max_overlap.
 Train/val split is by colony (world seed + tile + gameId), never by window.
 
-Output <out>/: train.npz and val.npz (cells uint8 [N,W,W], loss_mask bool, cond_mask bool reserved
-for obstacles (all true for now), source int32 [N,3] = snapshot index, z, x of the window's
-lower-left corner in snapshot cells, may be negative), manifest.json.
+Rock: natural rock isn't stored in the snapshots. Cells of the extract's mountain mask that are roofed, hold
+nothing built (category empty) and are not enclosed by walls are taken as rock. Rock bounds rooms, is category
+empty, and is left out of the loss.
+Rooms: with a "rooms" config section, room cells take a room-type category (rooms.py).
+
+Output <out>/: train.npz and val.npz (cells uint8 [N,W,W], loss_mask bool, cond uint8 [N,W,W] (0 free,
+1 rock), source int32 [N,3] = snapshot index, z, x of the window's lower-left corner in snapshot cells,
+may be negative), manifest.json.
 Rows are south (min z) first; rotations and flips are left to training time.
 """
 import argparse
@@ -40,6 +46,7 @@ from scipy import ndimage
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import categories  # noqa: E402
 import extract  # noqa: E402
+import rooms  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULTS = {
@@ -47,16 +54,30 @@ DEFAULTS = {
     "min_complete_buildings": 1, "max_masked_fraction": 1.0,
     "max_overlap": 0.5, "building_classes": ["free_standing", "unroofed_enclosure"],
     "terrain_overrides": {}, "edifice_overrides": {}, "split": {"by": "colony", "val": 0.1}, "seed": 1,
+    "allow_mountain": False, "max_rock_fraction": 1.0,
 }
 K8 = np.ones((3, 3), bool)
 
-_cfg = _cats = None   # set per worker by _init
+_cfg = _cats = _rooms = None   # set per worker by _init
 
 
 def _init(cfg, vocab):
-    global _cfg, _cats
+    global _cfg, _cats, _rooms
     _cfg = cfg
     _cats = categories.Categories(cfg, vocab)
+    _rooms = rooms.RoomTyper(cfg, vocab, _cats) if cfg.get("rooms") else None
+
+
+def rock_mask(e, cat, empty_id):
+    """Natural rock: mountain-mask cells that are roofed, unbuilt and not enclosed by walls/doors."""
+    walls = (e["edifice_flag"] & 3) > 0
+    open_ = ~walls & e["valid"]
+    lab, k = ndimage.label(open_)
+    border = ~ndimage.binary_erosion(e["valid"], border_value=0)
+    outside = np.zeros(k + 1, bool)
+    outside[np.unique(lab[border & open_])] = True
+    outside[0] = False
+    return e["mountain"] & e["roof"] & (cat == empty_id) & outside[lab]
 
 
 def window_sums(a, W, stride):
@@ -74,6 +95,12 @@ def windows_for(path):
     e = np.load(path)
     stats = collections.Counter()
     cat = cats.grid(e)
+    names = {i: nm for nm, i in cats.ids.items()}
+    rock = rock_mask(e, cat, cats.ids[cfg["categories"][0]["name"]])
+    if _rooms is not None:
+        blocking = ((e["edifice_flag"] & 3) > 0) | rock
+        for c, n in _rooms.assign(e, cat, blocking, e["valid"]).items():
+            stats[f"rooms_{names[c]}"] += n
     struct = np.isin(cat, cats.structure_ids())
     building = e["building"]
     allowed = {extract.CLASSES.index(c) for c in cfg["building_classes"]}
@@ -99,14 +126,16 @@ def windows_for(path):
     if H < e["valid"].shape[0]:            # truncated: nothing above the cut is known
         validp[P + H:, :] = False
     mountp = pad(e["mountain"], False)
+    rockp = pad(rock, False)
 
     Z, X, invalid = window_sums(~validp, W, cfg["stride"])
     _, _, mountain = window_sums(mountp, W, cfg["stride"])
     _, _, structure = window_sums(structp, W, cfg["stride"])
+    _, _, rock_cells = window_sums(rockp, W, cfg["stride"])
     stats["candidates"] += Z.size
     ok = invalid == 0
     stats["rejected_invalid"] += int((~ok).sum())
-    ok2 = ok & (mountain == 0)
+    ok2 = ok & (cfg["allow_mountain"] or (mountain == 0)) & (rock_cells <= cfg["max_rock_fraction"] * W * W)
     stats["rejected_mountain"] += int((ok & ~ok2).sum())
     ok3 = ok2 & (structure >= cfg["min_structure_cells"])
     stats["rejected_little_structure"] += int((ok2 & ~ok3).sum())
@@ -126,14 +155,15 @@ def windows_for(path):
         if bad and cfg["edge_policy"] == "reject":
             stats["rejected_cut_or_class"] += 1
             continue
-        loss = np.ones((W, W), bool)
+        loss = ~rockp[z:z + W, x:x + W]
         if bad:
             m = np.isin(cw, bad)
             if cfg["mask_grow"]:
                 m = ndimage.binary_dilation(m, K8, iterations=cfg["mask_grow"])
-            loss = ~m
+            loss &= ~m
         usable = int((structp[z:z + W, x:x + W] & loss).sum())
-        if usable < cfg["min_structure_cells"] or 1 - loss.mean() > cfg["max_masked_fraction"]:
+        masked = 1 - (loss | rockp[z:z + W, x:x + W]).mean()    # rock doesn't count as masked
+        if usable < cfg["min_structure_cells"] or masked > cfg["max_masked_fraction"]:
             stats["rejected_masked_too_much"] += 1
             continue
         # Complete buildings: enclosed buildings (segment.classify) of an allowed class whose
@@ -155,8 +185,10 @@ def windows_for(path):
             continue
         chosen.append((usable, z, x, loss))
     stats["windows"] += len(chosen)
-    stats["windows_with_mask"] += sum(1 for c in chosen if not c[3].all())
-    out = [(catp[z:z + W, x:x + W].copy(), loss, z - P, x - P) for _, z, x, loss in chosen]
+    stats["windows_with_mask"] += sum(1 for _, z, x, loss in chosen if not (loss | rockp[z:z + W, x:x + W]).all())
+    stats["windows_with_rock"] += sum(1 for _, z, x, _ in chosen if rockp[z:z + W, x:x + W].any())
+    out = [(catp[z:z + W, x:x + W].copy(), loss, rockp[z:z + W, x:x + W].astype(np.uint8), z - P, x - P)
+           for _, z, x, loss in chosen]
     return os.path.splitext(os.path.basename(path))[0], out, stats
 
 
@@ -198,10 +230,11 @@ def main():
             stats.update(st)
             stats["snapshots_with_windows"] += bool(wins)
             split = "val" if is_val(sid) else "train"
-            for cells, loss, z, x in wins:
+            for cells, loss, cond, z, x in wins:
                 s = sets[split]
                 s["cells"].append(cells)
                 s["loss_mask"].append(loss)
+                s["cond"].append(cond)
                 s["source"].append((sidx[sid], z, x))
             biomes[split][index[sid].get("biome")] += len(wins)
 
@@ -211,11 +244,13 @@ def main():
         n = len(s["cells"])
         cells = np.array(s["cells"], np.uint8).reshape(n, W, W)
         loss = np.array(s["loss_mask"], bool).reshape(n, W, W)
-        np.savez_compressed(os.path.join(out, split + ".npz"), cells=cells, loss_mask=loss,
-                            cond_mask=np.ones_like(loss), source=np.array(s["source"], np.int32).reshape(n, 3))
+        cond = np.array(s["cond"], np.uint8).reshape(n, W, W)
+        np.savez_compressed(os.path.join(out, split + ".npz"), cells=cells, loss_mask=loss, cond=cond,
+                            source=np.array(s["source"], np.int32).reshape(n, 3))
         hist = np.bincount(cells[loss].ravel(), minlength=max(c["id"] for c in cfg["categories"]) + 1)
         counts[split] = {"windows": n, "category_cells_in_loss": hist.tolist(),
-                         "masked_fraction": float(1 - loss.mean()) if n else 0.0,
+                         "masked_fraction": float(1 - (loss | (cond > 0)).mean()) if n else 0.0,
+                         "rock_fraction": float((cond == 1).mean()) if n else 0.0,
                          "biomes": dict(biomes[split].most_common())}
     manifest = {"config": cfg, "code_version": code_version(), "extract_version": extract.EXTRACT_VERSION,
                 "snapshots": sids, "filter_counts": dict(stats), "splits": counts}

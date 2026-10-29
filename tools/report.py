@@ -3,7 +3,7 @@
 Usage:
   python -I report.py <set dir> [--show N] [--split train|val] [--seed S]
       counts, filter breakdown, category frequencies, biomes, N ASCII sample windows
-      (category chars from the config; masked cells shown as "~" when they hold structure)
+      (category chars from the config; masked cells shown as "~" when they hold structure; rock "R")
   python -I report.py --vocab <config.json> [--extract DIR] [--top N]
       which terrain/edifice defs map to which category, by cell count; use this to fill
       terrain_overrides / edifice_overrides
@@ -43,12 +43,14 @@ def show_set(args):
     rnd = random.Random(args.seed)
     for i in rnd.sample(range(len(d["cells"])), min(args.show, len(d["cells"]))):
         cells, loss = d["cells"][i], d["loss_mask"][i]
+        rock = d["cond"][i] == 1 if "cond" in d.files else np.zeros_like(loss)
         sid = manifest["snapshots"][d["source"][i][0]]
         print(f"\n===== #{i}  {sid}  z={d['source'][i][1]} x={d['source'][i][2]}  "
-              f"masked {100 * (1 - loss.mean()):.0f}%")
+              f"masked {100 * (1 - (loss | rock).mean()):.0f}%, rock {100 * rock.mean():.0f}%")
         rows = []
         for r in range(cells.shape[0] - 1, -1, -1):   # north at the top
-            rows.append("".join(chars[c] if loss[r, j] or c == 0 else "~" for j, c in enumerate(cells[r])).rstrip())
+            rows.append("".join("R" if rock[r, j] else chars[c] if loss[r, j] or c == 0 else "~"
+                                for j, c in enumerate(cells[r])).rstrip())
         print("\n".join(rows))
 
 

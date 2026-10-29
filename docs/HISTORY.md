@@ -369,3 +369,64 @@ Files: `docs/history/v1_more_mdm/` (sample sheet at a=0.6, metrics at a=0.5/0.6/
   - mountain-adjacent buildings
   - random fixed regions during training
   - milder class weights, so the sampling bias matters less
+
+## 2026-10-29: v2 data set (`configs/v2.json`, `data/sets/v2_48`; plan in `docs/PLAN_v2.md`)
+
+New in the exporter:
+- `tools/rooms.py`: room types from room contents. The rules live in the config's `rooms` section.
+- `categories.py`: `thing_patterns`, used for cover, traps and turrets.
+- `windows.py`:
+  - a rock grid, saved per window as `cond` (1 = rock)
+  - mountain windows allowed (`allow_mountain`, `max_rock_fraction` 0.6); rock is left out of the loss
+- `report.py`: shows rock as `R`.
+
+Rock is taken to be mountain-mask cells that are roofed, unbuilt and not enclosed by walls. Rock also bounds rooms, so rooms dug
+into a mountain are typed too.
+
+28 categories:
+- base: empty, wall, door, floor, fence, wall_mounted
+- defences: embrasure, cover, trap, turret
+- 18 room types
+
+Bridges are dropped; bridge terrain counts as floor.
+
+| | v1_48_more | **v2_48** |
+|---|---|---|
+| Windows (train / val) | 15,704 (14,848 / 856) | **37,661** (35,689 / 1,972) |
+| Windows with rock | 0 | 22,264 |
+| Snapshots that give a window | 3,414 | 5,494 |
+| Rock cells | | 8.5% |
+| Masked cells (cut buildings) | 10% | 8.5% |
+
+Rooms typed over all snapshots: 121,771. The shares are close to the probe's:
+
+| Type | Share |
+|---|---|
+| bedroom | 34.6% |
+| room_empty | 16.0% |
+| room_untyped | 8.7% |
+| storage | 6.3% |
+| barracks | 4.7% |
+| kitchen | 3.9% |
+| workshop | 3.4% |
+| utility | 3.3% |
+| bathroom | 3.2% |
+| dining | 2.6% |
+| freezer | 2.2% |
+| hospital | 2.3% |
+| rec | 2.1% |
+| lab | 1.9% |
+| barn | 1.7% |
+| temple | 1.1% |
+| crypt | 1.0% |
+| nursery | 0.6% |
+
+- `room_empty` is twice the probe's share, for two reasons:
+  - rooms holding only ignored things (lamps, chairs, conduits) now count as empty, not untyped
+  - rock now closes about 5,700 extra rooms in mountains, many of them small and unfurnished
+- Freezers include wall-mounted cooler mods (`Cooler_Over`); passive coolers are excluded.
+- Cell shares in train:
+  - empty 79.4%, floor 7.5%, wall 5.2%, door 0.3%
+  - cover 0.16%, trap 0.07%, turret 0.03%, embrasure, fence and wall_mounted about 0.045% each
+  - all room types together 7.2%, with bedroom the largest at 1.4%
+- ASCII spot checks look right: rows of bedrooms, rooms against rock, dining hall with kitchen and freezer, turret rows behind embrasures.
