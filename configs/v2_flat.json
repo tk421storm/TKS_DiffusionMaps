@@ -1,0 +1,348 @@
+{
+ "name": "v2_48_flat",
+ "window": 48,
+ "stride": 8,
+ "categories": [
+  {
+   "id": 0,
+   "name": "empty",
+   "char": " "
+  },
+  {
+   "id": 2,
+   "name": "door",
+   "char": "+",
+   "rule": "edifice.door",
+   "structure": true
+  },
+  {
+   "id": 1,
+   "name": "wall",
+   "char": "#",
+   "rule": "edifice.wall",
+   "structure": true
+  },
+  {
+   "id": 4,
+   "name": "fence",
+   "char": ":",
+   "structure": true
+  },
+  {
+   "id": 5,
+   "name": "wall_mounted",
+   "char": "%",
+   "structure": true
+  },
+  {
+   "id": 6,
+   "name": "embrasure",
+   "char": "=",
+   "structure": true
+  },
+  {
+   "id": 7,
+   "name": "cover",
+   "char": "o"
+  },
+  {
+   "id": 8,
+   "name": "trap",
+   "char": "^"
+  },
+  {
+   "id": 9,
+   "name": "turret",
+   "char": "T"
+  },
+  {
+   "id": 10,
+   "name": "bedroom",
+   "char": "b"
+  },
+  {
+   "id": 11,
+   "name": "barracks",
+   "char": "B"
+  },
+  {
+   "id": 12,
+   "name": "dining",
+   "char": "d"
+  },
+  {
+   "id": 13,
+   "name": "rec",
+   "char": "r"
+  },
+  {
+   "id": 14,
+   "name": "kitchen",
+   "char": "k"
+  },
+  {
+   "id": 15,
+   "name": "workshop",
+   "char": "w"
+  },
+  {
+   "id": 16,
+   "name": "lab",
+   "char": "l"
+  },
+  {
+   "id": 17,
+   "name": "storage",
+   "char": "s"
+  },
+  {
+   "id": 18,
+   "name": "freezer",
+   "char": "f"
+  },
+  {
+   "id": 19,
+   "name": "bathroom",
+   "char": "h"
+  },
+  {
+   "id": 20,
+   "name": "utility",
+   "char": "u"
+  },
+  {
+   "id": 21,
+   "name": "hospital",
+   "char": "H"
+  },
+  {
+   "id": 22,
+   "name": "crypt",
+   "char": "c"
+  },
+  {
+   "id": 23,
+   "name": "temple",
+   "char": "t"
+  },
+  {
+   "id": 24,
+   "name": "nursery",
+   "char": "n"
+  },
+  {
+   "id": 25,
+   "name": "barn",
+   "char": "a"
+  },
+  {
+   "id": 26,
+   "name": "room_untyped",
+   "char": ","
+  },
+  {
+   "id": 27,
+   "name": "room_empty",
+   "char": "_"
+  },
+  {
+   "id": 3,
+   "name": "floor",
+   "char": ".",
+   "rule": "terrain.any & !terrain.natural"
+  }
+ ],
+ "terrain_overrides": {},
+ "terrain_patterns": [
+  [
+   "PackedDirt$",
+   "floor"
+  ]
+ ],
+ "edifice_overrides": {},
+ "edifice_patterns": [
+  [
+   "Embrasure",
+   "embrasure",
+   "edifice.wall & !edifice.door"
+  ],
+  [
+   "Generator|Turbine|Thruster|Crematorium|PodLauncher|Reactor|Battery|^Farm$",
+   "empty"
+  ],
+  [
+   "^Hewn|^Solid|CollapsedRocks|Basalt|DeepSnow|^Mineable|Ore[A-Z]|GasVent|ThermalVent",
+   "empty"
+  ],
+  [
+   "Fence|Palisade|Razor|Barrier|Picket|ChainLink|Chainlink|KnifeRest|Barbed|Hedge",
+   "fence",
+   "edifice.wall & !edifice.door"
+  ],
+  [
+   "Vent|Cooler|Heater|AirConditioning|Window|IntakeFan|FreezerUnit",
+   "wall_mounted",
+   "edifice.wall & !edifice.door"
+  ]
+ ],
+ "skip_things": "^(Frame_|Blueprint_|Minified)",
+ "thing_patterns": [
+  [
+   "Gun$|^Gun_|^Shell|Apparel|Headgear|Hat$|Pack$|Ammo|Shellfish|AnimalTrap|^Bullet",
+   "empty"
+  ],
+  [
+   "Turret|Mortar|Sentry",
+   "turret"
+  ],
+  [
+   "Trap|IED|Caltrop|CavalrySpike|Barbed|RazorWire|Stakes",
+   "trap"
+  ],
+  [
+   "Sandbag|Barricade|Barrier|KnifeRest|HESCO|Hedgehog",
+   "cover"
+  ]
+ ],
+ "rooms": {
+  "min_cells": 4,
+  "max_cells": 600,
+  "min_roof": 0.5,
+  "priority": [
+   "hospital",
+   "nursery",
+   "bedroom"
+  ],
+  "bed_one": "bedroom",
+  "bed_many": "barracks",
+  "barracks_beds": 3,
+  "dining": "dining",
+  "dining_min_tables": 2,
+  "dining_big_table_cells": 8,
+  "storage": "storage",
+  "storage_stacks": 3,
+  "freezer": "freezer",
+  "freezer_coolers": "(?<!Passive)Cooler|Freezer",
+  "untyped": "room_untyped",
+  "empty": "room_empty",
+  "things": [
+   [
+    "Chair|Stool|Seat_|Couch|Sofa|Armchair|EndTable|Dresser|Wardrobe|Lamp|Light|Conduit|Pipe|Vent|Heater|Cooler|Plant|Torch|Brazier|Sculpture|Rug|Column|Chunk|Slag|Filth|Sandbag|Barricade|Recharge|Turret|Trap",
+    "ignore"
+   ],
+   [
+    "AnimalBed|PetBed|Trough|Kennel|Hay|Nest|EggBox|AnimalSleeping",
+    "barn"
+   ],
+   [
+    "HospitalBed|OperatingTable|TableAutopsy|VitalsMonitor",
+    "hospital"
+   ],
+   [
+    "Crib|BabyBed",
+    "nursery"
+   ],
+   [
+    "DeathrestCasket|DeathrestAccelerator",
+    "bedroom"
+   ],
+   [
+    "(?i:bed)(?!room)(?<!AnimalBed)(?<!PetBed)|Bedroll|SleepingSpot|Cot\\b|Hammock|Sleeping",
+    "bed"
+   ],
+   [
+    "SchoolDesk|SchoolTable|Blackboard|Chalkboard",
+    "room_untyped"
+   ],
+   [
+    "Stove|TableButcher|Butcher|Campfire|Grill|Oven|Kitchen|Fryer|Microwave",
+    "kitchen"
+   ],
+   [
+    "FermentingBarrel|WineBarrel|Brewery|Brewing|BarrelProcessor|Distill|Fermenter|Still\\b",
+    "kitchen"
+   ],
+   [
+    "Chess|Billiards|Poker|Roulette|Faro|Television|TubeTelevision|Telescope|Piano|Harp|Organ|Drum|Marimba|Arcade|Horseshoe|Joy_|HoopstoneRing|GameOfUr|Dartboard",
+    "rec"
+   ],
+   [
+    "PunchingBag|Workout|Exercise|Treadmill|Weights",
+    "room_untyped"
+   ],
+   [
+    "Bookcase|Bookshelf|BookShelf|ReadingChair|^TextBook|^Novel|^Schematic",
+    "room_untyped"
+   ],
+   [
+    "ResearchBench|MultiAnalyzer|AncientComputerDesk",
+    "lab"
+   ],
+   [
+    "GeneBank|GeneProcessor|GeneAssembler|GeneExtractor|GrowthVat|Subcore",
+    "lab"
+   ],
+   [
+    "TableMachining|FabricationBench|Smithy|Tailor|Stonecutter|TableSculpting|DrugLab|Refinery|Crafting|TableMending|TableProsthetics|AmmoBench|TanningRack|ConcreteMixer|TableOrgans|Workbench|Forge|Loom|Spinning|Assembler|Bench(?!.*Seat)",
+    "workshop"
+   ],
+   [
+    "^Table\\d|^Table_(\\d|Royal\\d|interactive|Counter)|TableCircular|TableLinkable|RGK_Table|DiningTable|TableLong|TableRound",
+    "table"
+   ],
+   [
+    "WeaponsLocker|WeaponsCabinet|WeaponRack|ArmorRack|Armory",
+    "room_untyped"
+   ],
+   [
+    "Shelf|Rack|Locker|Cabinet|Crate|StorageBin|Storage|Hopper|Pallet|Skip",
+    "storage"
+   ],
+   [
+    "Toilet|Bath|Shower|Basin(?!.*Hydro)|Sauna|Hygiene|Sink|Latrine|WashBucket|HotTub",
+    "bathroom"
+   ],
+   [
+    "Throne|Altar|Ideogram|Lectern|Pulpit|Shrine|Ritual|Reliquary|Totem|SacrificialStone|Effigy",
+    "temple"
+   ],
+   [
+    "Grave|Sarcophagus|Coffin|Crypt",
+    "crypt"
+   ],
+   [
+    "Hydroponic|Planter|Ecosystem|PlantPot|SunLamp|Mushroom",
+    "room_untyped"
+   ],
+   [
+    "Generator|Battery|Turbine|Reactor|PowerCell|Geothermal|Boiler|HotWaterTank|WaterTank|WaterTower|Pump(?!kin)|WaterTreatment|Sewage|Septic|WaterWell|DeepWaterWell",
+    "utility"
+   ],
+   [
+    "CommsConsole|OrbitalTargeter|ResourceConsole|PilotConsole|ManagerStation|Console",
+    "room_untyped"
+   ],
+   [
+    "Biosculpter|Neural|StylingStation|Pod(?!Launcher|Car)",
+    "room_untyped"
+   ]
+  ]
+ },
+ "edge_policy": "mask",
+ "mask_grow": 1,
+ "min_structure_cells": 20,
+ "min_complete_buildings": 1,
+ "max_masked_fraction": 0.5,
+ "max_overlap": 0.5,
+ "allow_mountain": false,
+ "max_rock_fraction": 1.0,
+ "building_classes": [
+  "free_standing",
+  "unroofed_enclosure"
+ ],
+ "split": {
+  "by": "colony",
+  "val": 0.1
+ },
+ "seed": 1
+}

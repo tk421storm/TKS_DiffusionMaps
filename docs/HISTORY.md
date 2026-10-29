@@ -149,6 +149,14 @@ Dev actions (map only, category "DiffusionMaps"):
 First in-game test (7 pairs, `Player.log`): obstacle handling works, with up to 579 cells fixed and built around. But our layouts were
 very sparse (1-2 small buildings, almost no floor), and some rooms had no door or unclosed walls.
 
+![Step 1b compare: vanilla settlement on the left, v1 layout on the right](images/diffusion-step01b.JPG)
+
+*Vanilla on the left, ours on the right. Ours: a few small, partly open buildings, with water fixed as empty and built around.*
+
+![Step 1b compare near a mountain](images/diffusion-step01-mountains.JPG)
+
+*The same compare beside a mountain (top left). Ours, on the right, is again sparse: a handful of small buildings.*
+
 ## 2026-10-28: inpainting test, density and seed shapes (`train/inpaint_test.py`)
 
 Cause of the sparse layouts: the 1b tool fixed the 6-cell ring of the 48x48 window outside the 36x36 square as empty. The model reads
@@ -430,3 +438,42 @@ Rooms typed over all snapshots: 121,771. The shares are close to the probe's:
   - cover 0.16%, trap 0.07%, turret 0.03%, embrasure, fence and wall_mounted about 0.045% each
   - all room types together 7.2%, with bedroom the largest at 1.4%
 - ASCII spot checks look right: rows of bedrooms, rooms against rock, dining hall with kitchen and freezer, turret rows behind embrasures.
+
+## 2026-10-29: v2a, room types on flat data (`configs/train_v2a.json`, `runs/v2a_mdm`)
+
+Same model and schedule as v1_more_mdm (16.47M params, 150 epochs, ~37 s/epoch, 1.6 h). Changes:
+- data `data/sets/v2_48_flat` (`configs/v2_flat.json`): the same 15,704 flat windows as v1_48_more, with the 28 v2 categories
+- `weight_power` 0.25 instead of 0.5 (weights 0.75 for empty to 10.65 for nursery)
+- `train/metrics.py`: embrasure counts as wall; new room-type metrics (`room_typed_cells`, `room_type_pure`,
+  `room_type_outside`); `train/render.py`: colours for the new categories
+
+Best val loss 0.4043 (not comparable with v1: more classes, other weights).
+
+Samples (64, seed 42) at several logit-adjust strengths; real = val set:
+
+| | real | a=0 | a=0.5 | a=0.75 | a=1.0 | v1_more a=0.6 |
+|---|---|---|---|---|---|---|
+| freq_empty | 0.885 | 0.602 | 0.807 | 0.880 | 0.917 | 0.805 |
+| freq_wall | 0.034 | 0.076 | 0.046 | 0.031 | 0.023 | 0.051 |
+| freq_floor | 0.032 | 0.143 | 0.078 | 0.051 | 0.038 | 0.131 (incl. rooms) |
+| freq_door | 0.0019 | 0.0034 | 0.0016 | 0.0008 | 0.0004 | 0.0029 |
+| rooms_per_window | 2.67 | 4.14 | 2.72 | 1.41 | 1.09 | 3.14 |
+| rooms_with_door | 0.951 | 0.687 | 0.626 | 0.533 | 0.386 | 0.861 |
+| door_valid | 0.897 | 0.840 | 0.825 | 0.813 | 0.817 | 0.870 |
+| stray_wall | 0.015 | 0.010 | 0.013 | 0.014 | 0.017 | 0.011 |
+| room_typed_cells | 0.850 | 0.966 | 0.942 | 0.955 | 0.839 | |
+| room_type_pure | 1.0 | 0.948 | 0.967 | 1.0 | 1.0 | |
+| room_type_outside | 0.008 | 0.290 | 0.273 | 0.258 | 0.385 | |
+
+- a=0.5 is the best match: room count and size are right (2.72 per window, median 25 cells).
+- **Better than v1:** rooms are much cleaner. Most are crisp rectangles filled with one type, in sensible groups (rows of
+  bedrooms, kitchen + dining + freezer, big barracks). 94-97% of typed rooms are one type. Floor outside rooms is still
+  blobby (paths and patios), but there's less of it, and floor no longer mixes into rooms.
+- **Worse than v1: doors.** Only 63% of enclosed regions touch a door at a=0.5 (v1: 86%). Typed rooms alone: 65% (a=0.5),
+  73% (a=0). The door share drops quickly as the bias rises. A likely cause is the lower door weight from `weight_power` 0.25.
+- **Leaky rooms:** 27% of room-type cells are not enclosed. In the samples checked by eye these are mostly rooms with a
+  one-cell gap in the wall, not types painted in the open (not measured). The type fill shows where the walls should be, so a repair pass could close the gaps (wall between a typed cell
+  and an empty one).
+- Defences show up as thin rows of traps and cover, plus the odd turret. Too few to judge.
+
+Files: `docs/history/v2a_mdm/` (config, loss log, metrics at a=0/0.5/0.75/1.0, a=0.5 sample sheet and ASCII).

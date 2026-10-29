@@ -5,6 +5,14 @@ import numpy as np
 COLORS = {
     "empty": (38, 46, 34), "wall": (200, 200, 200), "door": (230, 160, 40), "floor": (120, 95, 70),
     "bridge": (70, 120, 200), "fence": (150, 200, 90), "wall_mounted": (220, 70, 70),
+    # v2 defences
+    "embrasure": (150, 175, 215), "cover": (185, 165, 105), "trap": (240, 90, 30), "turret": (60, 230, 230),
+    # v2 room types (interior colour; walls stay light grey)
+    "bedroom": (95, 120, 190), "barracks": (60, 80, 150), "dining": (200, 140, 90), "rec": (220, 110, 170),
+    "kitchen": (230, 200, 70), "workshop": (160, 110, 60), "lab": (110, 200, 220), "storage": (140, 130, 110),
+    "freezer": (190, 230, 250), "bathroom": (90, 170, 160), "utility": (240, 230, 140), "hospital": (240, 240, 240),
+    "crypt": (90, 70, 90), "temple": (170, 120, 210), "nursery": (250, 190, 200), "barn": (130, 160, 70),
+    "room_untyped": (150, 140, 125), "room_empty": (100, 95, 85),
 }
 
 

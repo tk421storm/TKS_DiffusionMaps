@@ -1,0 +1,39 @@
+{
+ "base": 64,
+ "mults": [
+  1,
+  2,
+  4
+ ],
+ "nres": 2,
+ "attn_levels": [
+  2
+ ],
+ "heads": 4,
+ "dropout": 0.1,
+ "batch": 64,
+ "epochs": 150,
+ "lr": 0.0003,
+ "wd": 0.01,
+ "warmup_steps": 500,
+ "ema": 0.999,
+ "weight_power": 0.25,
+ "weight_cap": 20.0,
+ "grad_clip": 1.0,
+ "eval_every": 10,
+ "eval_ratios": [
+  0.1,
+  0.3,
+  0.5,
+  0.7,
+  0.9,
+  1.0
+ ],
+ "sample_n": 64,
+ "sample_steps": 16,
+ "temperature": 1.0,
+ "conf_noise": 4.5,
+ "seed": 1,
+ "name": "v2a_mdm",
+ "set": "data/sets/v2_48_flat"
+}

@@ -10,17 +10,25 @@ Per set of windows:
   room_area_median     median cells per enclosed region
   rooms_with_door      enclosed regions touching at least one door
   floor_enclosed       share of floor cells inside enclosed regions
+With room-type categories (v2: every name not in BASE is a room type):
+  room_typed_cells     share of the open cells of enclosed regions that hold a room type
+  room_type_pure       enclosed regions whose room-type cells are at least 90% one type (of regions with any)
+  room_type_outside    share of room-type cells that lie outside every enclosed region (should be ~0)
+Embrasures count as wall.
 """
 import numpy as np
 from scipy import ndimage
 
 FOUR = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], bool)
+BASE = {"empty", "wall", "door", "floor", "bridge", "fence", "wall_mounted", "embrasure", "cover", "trap", "turret"}
 
 
 def compute(cells, names):
     ids = {v: k for k, v in names.items()}
     wall, door = ids.get("wall", -1), ids.get("door", -1)
     fence, mounted, floor = ids.get("fence", -1), ids.get("wall_mounted", -1), ids.get("floor", -1)
+    embrasure = ids.get("embrasure", -1)
+    room_ids = np.array([i for i, nm in names.items() if nm not in BASE], int)
     n = len(cells)
     out = {}
     counts = np.bincount(cells.ravel(), minlength=max(names) + 1)
@@ -33,11 +41,12 @@ def compute(cells, names):
     areas = []
     rooms_door = 0
     floor_in = floor_all = 0
+    typed_in = open_in = typed_all = typed_out = pure = with_type = 0
     for c in cells:
-        wl = np.isin(c, [wall, door, fence, mounted])
+        wl = np.isin(c, [wall, door, fence, mounted, embrasure])
         p = np.pad(wl, 1)
         nbr = p[:-2, 1:-1].astype(int) + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:]
-        blocks = np.isin(c, [wall, fence, mounted])
+        blocks = np.isin(c, [wall, fence, mounted, embrasure])
         stray += int((blocks & (nbr == 0)).sum())
         blocking += int(blocks.sum())
         ns, ew = p[:-2, 1:-1] & p[2:, 1:-1], p[1:-1, :-2] & p[1:-1, 2:]
@@ -54,6 +63,9 @@ def compute(cells, names):
         door_touch = ndimage.binary_dilation(d, FOUR)
         fl = c == floor
         floor_all += int(fl.sum())
+        typed = np.isin(c, room_ids)
+        typed_all += int(typed.sum())
+        typed_out += int((typed & ((lab == outside) | (lab == 0))).sum())
         for r in range(1, k + 1):
             if r == outside:
                 continue
@@ -65,6 +77,13 @@ def compute(cells, names):
             areas.append(a)
             rooms_door += bool((region & door_touch).any())
             floor_in += int((region & fl).sum())
+            if len(room_ids):
+                t = c[region & typed]
+                open_in += a
+                typed_in += len(t)
+                if len(t):
+                    with_type += 1
+                    pure += np.bincount(t).max() >= 0.9 * len(t)
 
     out["stray_wall"] = stray / max(1, blocking)
     out["door_valid"] = door_ok / max(1, door_n)
@@ -73,6 +92,10 @@ def compute(cells, names):
     out["room_area_median"] = float(np.median(areas)) if areas else 0.0
     out["rooms_with_door"] = rooms_door / max(1, rooms)
     out["floor_enclosed"] = floor_in / max(1, floor_all)
+    if len(room_ids):
+        out["room_typed_cells"] = typed_in / max(1, open_in)
+        out["room_type_pure"] = pure / max(1, with_type)
+        out["room_type_outside"] = typed_out / max(1, typed_all)
     return out
 
 
